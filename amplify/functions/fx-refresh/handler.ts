@@ -1,11 +1,11 @@
 import { Amplify } from 'aws-amplify';
 import { generateClient } from 'aws-amplify/data';
 import { getAmplifyDataClientConfig } from '@aws-amplify/backend/function/runtime';
-import { env } from '$amplify/env/fx-refresh';
 import type { Schema } from '../../data/resource';
+import { dataClientEnv } from '../shared';
 import type { EventBridgeHandler } from 'aws-lambda';
 
-const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
+const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(dataClientEnv());
 Amplify.configure(resourceConfig, libraryOptions);
 
 const data = generateClient<Schema>();
