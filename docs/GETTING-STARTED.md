@@ -108,6 +108,7 @@ the first thing to break behind a corporate proxy.
 npm test              # domain logic: money, splits, FX, balances, settlement
 npm run typecheck     # frontend + shared code
 npm run typecheck:backend   # amplify/ — the same check ampx runs before deploying
+npm run check:backend       # backend imports resolve the way ampx loads them
 npm run build         # production build
 ```
 
