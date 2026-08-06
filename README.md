@@ -155,7 +155,7 @@ Deploy production by connecting this repository in the **AWS Amplify Console**:
 ---
 
 ## 📄 License
-_Choose a license (e.g. MIT) and add it here._
+Released under the [MIT License](./LICENSE).
 
 ---
 
