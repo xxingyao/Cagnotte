@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      # `npm ci` cannot be used here: aws-cdk-lib and the Amplify GraphQL
+      # constructs declare bundleDependencies, whose transitive deps npm leaves
+      # out of the lockfile it generates — so `npm ci` rejects npm's own output.
+      # The committed lockfile still pins versions for `npm install`.
+      - run: npm install --no-audit --no-fund
+      # Domain logic (money, splits, FX, balances) needs no AWS at all.
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run build

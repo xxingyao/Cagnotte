@@ -1,0 +1,22 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-ink: #12161f;
+  --color-mist: #f6f7f9;
+}
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-mist text-ink antialiased;
+}
+
+/* Amplify's Authenticator ships its own tokens; nudge them toward ours. */
+[data-amplify-authenticator] {
+  --amplify-components-button-primary-background-color: var(--color-ink);
+  --amplify-components-button-primary-hover-background-color: #2a3242;
+  --amplify-components-tabs-item-active-color: var(--color-ink);
+  --amplify-components-tabs-item-active-border-color: var(--color-ink);
+}
