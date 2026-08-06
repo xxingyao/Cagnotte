@@ -1,15 +1,19 @@
+# `npm ci` is deliberately not used: aws-cdk-lib and the Amplify GraphQL
+# constructs declare bundleDependencies, whose transitive dependencies npm omits
+# from the lockfile it writes, making `npm ci` fail on npm's own output. The
+# committed package-lock.json still pins versions for `npm install`.
 version: 1
 backend:
   phases:
     build:
       commands:
-        - npm ci --cache .npm --prefer-offline
+        - npm install --no-audit --no-fund --cache .npm --prefer-offline
         - npx ampx pipeline-deploy --branch $AWS_BRANCH --app-id $AWS_APP_ID
 frontend:
   phases:
     preBuild:
       commands:
-        - npm ci --cache .npm --prefer-offline
+        - npm install --no-audit --no-fund --cache .npm --prefer-offline
     build:
       commands:
         - npm run build
