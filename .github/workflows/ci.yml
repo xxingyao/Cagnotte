@@ -25,4 +25,7 @@ jobs:
       # The same check `ampx pipeline-deploy` runs against amplify/. Running it
       # here means a backend type error fails the PR instead of the deploy.
       - run: npm run typecheck:backend
+      # Type checks pass on a backend that cannot actually be loaded, so also
+      # resolve the backend module graph the way `ampx pipeline-deploy` does.
+      - run: npm run check:backend
       - run: npm run build
