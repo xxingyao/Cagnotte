@@ -55,18 +55,24 @@
 
 ```
 cagnotte/
-├── amplify/                 # Amplify Gen 2 backend (TypeScript)
-│   ├── auth/resource.ts     # Cognito configuration
-│   ├── data/resource.ts     # Data models + authorization rules
-│   ├── functions/           # Lambda functions (splitting, FX refresh)
-│   └── backend.ts           # Backend definition entry point
-├── app/ (or src/)           # Next.js frontend
-│   ├── components/
-│   ├── lib/                 # Amplify client, currency helpers
-│   └── ...
-├── amplify_outputs.json     # Generated — connects frontend to backend
-├── package.json
-└── README.md
+├── amplify/                    # Amplify Gen 2 backend (TypeScript)
+│   ├── auth/resource.ts        # Cognito configuration
+│   ├── data/resource.ts        # Data models + authorization rules
+│   ├── functions/
+│   │   ├── create-group/       # Lambda: create group + Cognito group
+│   │   ├── join-group/         # Lambda: redeem an invite code
+│   │   ├── fx-refresh/         # Lambda: daily FX pull (EventBridge)
+│   │   └── shared.ts
+│   └── backend.ts              # Backend definition entry point
+├── src/
+│   ├── app/                    # Next.js App Router pages
+│   ├── components/             # Dashboard, group view, forms, panels
+│   ├── hooks/
+│   └── lib/                    # money, fx, splits, balances (+ their tests)
+├── docs/GETTING-STARTED.md     # Setup, deployment, and what to build next
+├── amplify.yml                 # Amplify Hosting build spec
+├── amplify_outputs.json        # Generated — connects frontend to backend
+└── package.json
 ```
 
 ---
@@ -77,15 +83,18 @@ Defined in `amplify/data/resource.ts` and provisioned automatically as DynamoDB 
 
 | Model | Key fields |
 |---|---|
-| **User** | id, name, email, defaultCurrency |
-| **Group** | id, name, baseCurrency, createdBy |
-| **Membership** | userId, groupId, role |
+| **Group** | id, name, baseCurrency, groupKey, inviteCode, createdBy |
+| **Membership** | groupId, groupKey, userId, displayName, role |
 | **Expense** | id, groupId, payerId, amountOriginal, currencyOriginal, amountInBase, fxRateUsed, category, date, note |
 | **Split** | id, expenseId, userId, shareAmount |
 | **Budget** | id, groupId, month (`YYYY-MM`), limitInBase |
-| **Rate** | currencyPair, rate, fetchedAt |
+| **Rate** | base, quote, rate, fetchedAt |
 
-> **Authorization:** group data is readable only by its members, enforced declaratively with Cognito owner/group rules in the schema.
+> **Authorization:** every group-scoped row carries a `groupKey` naming a Cognito
+> user-pool group, and AppSync checks it against the caller's token — so a user
+> can only ever read or write data for groups they belong to. Membership is
+> granted exclusively by the `create-group` and `join-group` Lambdas; a client
+> has no permission to add itself to a group.
 
 ---
 
@@ -117,8 +126,21 @@ npm run dev
 ```
 Open [http://localhost:3000](http://localhost:3000).
 
-### 4. Configure the FX rate source
-Add your exchange-rate API key as a backend secret (never in frontend code):
+Full setup — including AWS credentials, seeding exchange rates, and the manual
+test walkthrough — is in **[docs/GETTING-STARTED.md](./docs/GETTING-STARTED.md)**.
+
+### 4. Run the checks
+```bash
+npm test            # money, splits, FX, balances & settlement — no AWS needed
+npm run typecheck
+npm run build
+```
+
+### 5. Exchange rates
+`fx-refresh` uses a keyless provider by default and runs daily via EventBridge.
+The table is empty until its first run — invoke it once by hand to seed it (see
+the setup guide). Pointing it at a paid provider means adding the key as a
+backend secret, never in frontend code:
 ```bash
 npx ampx sandbox secret set FX_API_KEY
 ```
@@ -138,19 +160,26 @@ Deploy production by connecting this repository in the **AWS Amplify Console**:
 ## 🗺️ Roadmap
 
 - [x] Project scaffold (Amplify Gen 2 + Next.js)
-- [ ] **MVP:** auth, groups, equal-split expenses, FX conversion, monthly budget, balances, real-time
-- [ ] Additional split methods (shares, %, exact)
-- [ ] Minimised settlement ("fewest payments") algorithm
+- [x] **MVP:** auth, groups, equal-split expenses, FX conversion, monthly budget, balances, real-time
+- [x] Minimised settlement ("fewest payments") algorithm
+- [ ] Atomic expense + splits write (one Lambda instead of two client writes)
+- [ ] Additional split methods in the UI (shares, %, exact — logic is done and tested)
+- [ ] Edit & delete expenses
 - [ ] Receipt uploads (S3)
 - [ ] Budget alerts & notifications
 - [ ] Analytics, charts, and CSV export
 
+Known MVP limitations are listed honestly in
+[`cagnotte-mvp-description.md`](./cagnotte-mvp-description.md).
+
 ---
 
 ## 🔒 Security Notes
-- Money is stored as integer minor units (cents) — never as floats.
+- Money is stored as integer minor units (cents) — never as floats. Splits are unit-tested to sum exactly to the expense total.
 - API keys live in AWS Secrets Manager / Amplify secrets, never in the client.
-- All group access is authorized at the data layer.
+- All group access is authorized at the data layer, against the caller's Cognito token.
+- Granting membership is Lambda-only; the client cannot add itself to a group.
+- An expense's original amount, currency, and the FX rate used are immutable — later rate changes never restate past spending.
 
 ---
 
