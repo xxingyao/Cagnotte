@@ -11,7 +11,8 @@
     "test": "tsx --test src/lib/*.test.ts",
     "sandbox": "ampx sandbox",
     "typecheck:backend": "tsc -p amplify --noEmit",
-    "prebuild": "node scripts/ensure-outputs.mjs"
+    "prebuild": "node scripts/ensure-outputs.mjs",
+    "check:backend": "node scripts/check-backend-loads.mjs"
   },
   "dependencies": {
     "@aws-amplify/ui-react": "^6.5.5",
