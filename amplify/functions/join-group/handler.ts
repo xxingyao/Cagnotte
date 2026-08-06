@@ -5,11 +5,10 @@ import {
   CognitoIdentityProviderClient,
   AdminAddUserToGroupCommand,
 } from '@aws-sdk/client-cognito-identity-provider';
-import { env } from '$amplify/env/join-group';
 import type { Schema } from '../../data/resource';
-import { normaliseInviteCode, requireCaller, requireUserPoolId } from '../shared';
+import { dataClientEnv, normaliseInviteCode, requireCaller, requireUserPoolId } from '../shared';
 
-const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(env);
+const { resourceConfig, libraryOptions } = await getAmplifyDataClientConfig(dataClientEnv());
 Amplify.configure(resourceConfig, libraryOptions);
 
 const data = generateClient<Schema>();

@@ -107,7 +107,7 @@ the first thing to break behind a corporate proxy.
 ```bash
 npm test              # domain logic: money, splits, FX, balances, settlement
 npm run typecheck     # frontend + shared code
-npm run typecheck:backend   # amplify/ — needs `ampx sandbox` to have run once
+npm run typecheck:backend   # amplify/ — the same check ampx runs before deploying
 npm run build         # production build
 ```
 
