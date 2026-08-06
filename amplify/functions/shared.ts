@@ -1,5 +1,45 @@
 /** Helpers shared by the Cagnotte Lambda handlers. */
 
+/**
+ * The environment `getAmplifyDataClientConfig` needs to reach the data API.
+ *
+ * Amplify can generate a typed `$amplify/env/<function>` shim for this, but that
+ * file is written during CDK synth — so a clean checkout (CI, or Amplify
+ * Hosting's first build) fails its TypeScript validation before anything has
+ * generated it. The shim is defined as `export const env = process.env`, so
+ * reading `process.env` here is identical at runtime and needs no build step.
+ * SSM-backed secrets still resolve: that happens in an esbuild banner injected
+ * into the bundle, independently of this import.
+ */
+export interface DataClientEnv {
+  AWS_ACCESS_KEY_ID: string;
+  AWS_SECRET_ACCESS_KEY: string;
+  AWS_SESSION_TOKEN: string;
+  AWS_REGION: string;
+  AMPLIFY_DATA_DEFAULT_NAME: string;
+  [key: string]: unknown;
+}
+
+const REQUIRED_DATA_ENV = [
+  'AWS_ACCESS_KEY_ID',
+  'AWS_SECRET_ACCESS_KEY',
+  'AWS_SESSION_TOKEN',
+  'AWS_REGION',
+  'AMPLIFY_DATA_DEFAULT_NAME',
+] as const;
+
+/** Fails loudly at cold start rather than producing a misconfigured client. */
+export function dataClientEnv(): DataClientEnv {
+  const missing = REQUIRED_DATA_ENV.filter((key) => !process.env[key]);
+  if (missing.length > 0) {
+    throw new Error(
+      `Missing Lambda environment variables: ${missing.join(', ')}. ` +
+        'Grant this function data access with `allow.resource(fn)` in the schema.'
+    );
+  }
+  return process.env as unknown as DataClientEnv;
+}
+
 export interface Caller {
   sub: string;
   username: string;
