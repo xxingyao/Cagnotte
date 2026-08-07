@@ -6,18 +6,18 @@ import { useParams } from 'next/navigation';
 import { useStore } from '@/components/StoreProvider';
 import { CATEGORIES, CATEGORY_EMOJI, CURRENCIES } from '@/lib/options';
 import { formatMoney, parseAmountToMinor } from '@/lib/money';
-import { computeBalances, computeSettlements, type Balance } from '@/lib/balances';
+import { computeBalances, computeSettlements, type Balance, type Settlement } from '@/lib/balances';
 import type { Member } from '@/lib/types';
 
 export default function GroupPage() {
   const params = useParams<{ groupId: string }>();
-  const { data, ready, addExpense, setBudget, syncGroup } = useStore();
+  const { data, ready, userId, addExpense, setBudget, syncGroup } = useStore();
   const [syncError, setSyncError] = useState<string | null>(null);
 
   const groupId = params.groupId;
 
-  // Every hook has to run before any early return, so this sits above the
-  // `!ready` guard rather than next to the code that uses its result.
+  // Every hook has to run before any early return, so these sit above the
+  // `!ready` guard rather than next to the code that uses their results.
   useEffect(() => {
     if (!ready || !groupId) return;
     let cancelled = false;
@@ -31,8 +31,8 @@ export default function GroupPage() {
   }, [ready, groupId, syncGroup]);
 
   // Someone else's spending won't appear on its own — there's no push channel.
-  // Refetching when the tab regains focus covers the realistic case: you switch
-  // away, your friend logs dinner, you switch back.
+  // Refetching on tab focus covers the realistic case: you switch away, your
+  // friend logs dinner, you switch back.
   useEffect(() => {
     if (!ready || !groupId) return;
     const refresh = () => {
@@ -55,6 +55,7 @@ export default function GroupPage() {
     [data.expenses, groupId],
   );
 
+  // Memoised because this walks every expense in the group, on every render.
   const balances = useMemo(
     () => (group ? computeBalances(groupExpenses, group.members, group.baseCurrency) : []),
     [groupExpenses, group],
@@ -119,6 +120,7 @@ export default function GroupPage() {
         <AddExpenseCard
           members={group.members}
           baseCurrency={group.baseCurrency}
+          youId={userId}
           onAdd={async (expense) => {
             try {
               await addExpense({ ...expense, groupId: group.id });
@@ -135,6 +137,7 @@ export default function GroupPage() {
           balances={balances}
           currency={group.baseCurrency}
           excludedCount={otherCurrencyCount}
+          youId={userId}
         />
 
         <SettleUpCard settlements={settlements} currency={group.baseCurrency} />
@@ -142,6 +145,16 @@ export default function GroupPage() {
         <section className="card">
           <div className="card-head">
             <h2 className="card-title">Expenses</h2>
+            <button
+              type="button"
+              className="sub"
+              style={{ background: 'none', border: 0, cursor: 'pointer' }}
+              onClick={() =>
+                syncGroup(group.id).catch((error: Error) => setSyncError(error.message))
+              }
+            >
+              Refresh
+            </button>
           </div>
           {groupExpenses.length === 0 ? (
             <p className="sub">Nothing logged yet.</p>
@@ -151,6 +164,8 @@ export default function GroupPage() {
                 const showDate = expense.date !== lastDate;
                 lastDate = expense.date;
                 const payer = group.members.find((m) => m.id === expense.payerId);
+                const payerLabel =
+                  expense.payerId === userId ? 'You' : payer?.name ?? 'Someone';
                 return (
                   <Fragment key={expense.id}>
                     {showDate && <li className="day-label">{expense.date}</li>}
@@ -161,8 +176,7 @@ export default function GroupPage() {
                       <div className="row-main">
                         <div className="row-title">{expense.description}</div>
                         <div className="row-sub">
-                          {payer?.name ?? 'Someone'} paid · split{' '}
-                          {expense.splitBetween.length} way
+                          {payerLabel} paid · split {expense.splitBetween.length} way
                           {expense.splitBetween.length === 1 ? '' : 's'}
                         </div>
                       </div>
@@ -184,11 +198,12 @@ export default function GroupPage() {
 }
 
 function BalancesCard({
-  balances, currency, excludedCount,
+  balances, currency, excludedCount, youId,
 }: {
   balances: Balance[];
   currency: string;
   excludedCount: number;
+  youId: string;
 }) {
   const anyActivity = balances.some((b) => b.paidMinor !== 0 || b.owedMinor !== 0);
 
@@ -203,17 +218,20 @@ function BalancesCard({
       ) : (
         <ul className="rows">
           {balances.map((balance) => {
+            const isYou = balance.memberId === youId;
             const tone = balance.netMinor > 0 ? 'pos' : balance.netMinor < 0 ? 'neg' : 'dim';
             const standing =
               balance.netMinor > 0
-                ? `is owed ${formatMoney(balance.netMinor, currency)}`
+                ? `${isYou ? "you're" : 'is'} owed ${formatMoney(balance.netMinor, currency)}`
                 : balance.netMinor < 0
-                  ? `owes ${formatMoney(-balance.netMinor, currency)}`
+                  ? `${isYou ? 'you owe' : 'owes'} ${formatMoney(-balance.netMinor, currency)}`
                   : 'settled up';
             return (
               <li key={balance.memberId} className="row">
                 <div className="row-main">
-                  <div className="row-title">{balance.name}</div>
+                  <div className="row-title">
+                    {isYou ? `${balance.name} (you)` : balance.name}
+                  </div>
                   <div className="row-sub">
                     paid {formatMoney(balance.paidMinor, currency)}
                   </div>
@@ -240,7 +258,7 @@ function BalancesCard({
 function SettleUpCard({
   settlements, currency,
 }: {
-  settlements: { fromId: string; fromName: string; toId: string; toName: string; amountMinor: number }[];
+  settlements: Settlement[];
   currency: string;
 }) {
   if (settlements.length === 0) return null;
@@ -342,10 +360,11 @@ function BudgetCard({
 }
 
 function AddExpenseCard({
-  members, baseCurrency, onAdd,
+  members, baseCurrency, youId, onAdd,
 }: {
   members: Member[];
   baseCurrency: string;
+  youId: string;
   onAdd: (e: {
     description: string; amountMinor: number; currency: string;
     category: string; payerId: string; date: string; splitBetween: string[];
@@ -357,7 +376,11 @@ function AddExpenseCard({
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState(baseCurrency);
   const [category, setCategory] = useState('Food');
-  const [payerId, setPayerId] = useState(members[0]?.id ?? '');
+  // Default to you, not to members[0] — on a device that *joined*, members[0]
+  // is whoever created the group, and every expense would be misattributed.
+  const [payerId, setPayerId] = useState(
+    members.some((m) => m.id === youId) ? youId : members[0]?.id ?? '',
+  );
   const [date, setDate] = useState(today);
   const [splitBetween, setSplitBetween] = useState<string[]>(members.map((m) => m.id));
   const [error, setError] = useState<string | null>(null);
@@ -368,9 +391,12 @@ function AddExpenseCard({
   const memberKey = members.map((m) => m.id).join(',');
   useEffect(() => {
     setSplitBetween(members.map((m) => m.id));
-    setPayerId((current) => (members.some((m) => m.id === current) ? current : members[0]?.id ?? ''));
+    setPayerId((current) => {
+      if (members.some((m) => m.id === current)) return current;
+      return members.some((m) => m.id === youId) ? youId : members[0]?.id ?? '';
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [memberKey]);
+  }, [memberKey, youId]);
 
   function toggleSharer(id: string) {
     setSplitBetween((current) =>
@@ -398,9 +424,10 @@ function AddExpenseCard({
     setError(null);
   }
 
+  const amountMinor = parseAmountToMinor(amount, currency);
   const perPerson =
-    parseAmountToMinor(amount, currency) !== null && splitBetween.length > 0
-      ? Math.floor(parseAmountToMinor(amount, currency)! / splitBetween.length)
+    amountMinor !== null && splitBetween.length > 0
+      ? Math.floor(amountMinor / splitBetween.length)
       : null;
 
   return (
@@ -438,7 +465,11 @@ function AddExpenseCard({
           <span className="field-label">Paid by</span>
           <select className="select" value={payerId}
                   onChange={(e) => setPayerId(e.target.value)}>
-            {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            {members.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.id === youId ? `${m.name} (you)` : m.name}
+              </option>
+            ))}
           </select>
         </label>
       </div>
@@ -457,7 +488,7 @@ function AddExpenseCard({
                    style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14 }}>
               <input type="checkbox" checked={splitBetween.includes(m.id)}
                      onChange={() => toggleSharer(m.id)} />
-              {m.name}
+              {m.id === youId ? `${m.name} (you)` : m.name}
             </label>
           ))}
         </div>
