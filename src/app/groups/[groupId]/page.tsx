@@ -30,6 +30,21 @@ export default function GroupPage() {
     };
   }, [ready, groupId, syncGroup]);
 
+  // Someone else's spending won't appear on its own — there's no push channel.
+  // Refetching when the tab regains focus covers the realistic case: you switch
+  // away, your friend logs dinner, you switch back.
+  useEffect(() => {
+    if (!ready || !groupId) return;
+    const refresh = () => {
+      syncGroup(groupId).catch(() => {
+        // A failed background refresh shouldn't replace what's on screen with
+        // an error — the mount-time sync already reports real problems.
+      });
+    };
+    window.addEventListener('focus', refresh);
+    return () => window.removeEventListener('focus', refresh);
+  }, [ready, groupId, syncGroup]);
+
   const group = data.groups.find((g) => g.id === groupId);
 
   const groupExpenses = useMemo(
