@@ -1,7 +1,6 @@
 import { Fragment } from 'react';
 import Link from 'next/link';
 import { Avatars } from '@/components/Avatars';
-import { DesignNotice } from '@/components/DesignNotice';
 import {
   activeGroup,
   balances,
@@ -21,8 +20,6 @@ export default function GroupPage() {
 
   return (
     <main>
-      <DesignNotice />
-
       <Link href="/" className="backlink">
         ← All groups
       </Link>

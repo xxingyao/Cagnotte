@@ -1,13 +1,10 @@
 import Link from 'next/link';
 import { Avatars } from '@/components/Avatars';
-import { DesignNotice } from '@/components/DesignNotice';
 import { groups } from '@/lib/sample-data';
 
 export default function DashboardPage() {
   return (
     <main>
-      <DesignNotice />
-
       <h1 className="page-title">Your groups</h1>
       <p className="page-sub">Three shared pots, all reported in their own base currency.</p>
 

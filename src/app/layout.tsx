@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
-import './globals.css';
+// import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Cagnotte',
@@ -19,7 +19,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </span>
               Cagnotte
             </Link>
-            <span className="chip">Design preview</span>
           </header>
           {children}
         </div>

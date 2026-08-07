@@ -130,24 +130,6 @@ a {
   gap: 16px;
 }
 
-/* ---------- notice ---------- */
-
-.notice {
-  display: flex;
-  gap: 10px;
-  align-items: baseline;
-  background: var(--brand-soft);
-  color: var(--brand-ink);
-  border-radius: var(--radius-sm);
-  padding: 10px 14px;
-  font-size: 13px;
-  margin-bottom: 22px;
-}
-
-.notice strong {
-  font-weight: 620;
-}
-
 /* ---------- cards ---------- */
 
 .card {
