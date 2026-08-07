@@ -1,5 +1,5 @@
 const API_BASE = 'https://oxfhpuu8a8.execute-api.us-east-1.amazonaws.com/dev';
-import type { Expense } from './types';
+import type { Expense, Group, Member } from './types';
 
 /**
  * One place to talk to the Lambda API.
@@ -27,13 +27,22 @@ async function request(path: string, init?: RequestInit) {
   }
 
   // A Lambda that failed to start reports itself in the body, not the status.
-  const asError = json as { errorMessage?: string; error?: string } | null;
+    const asError = json as { errorMessage?: string; error?: string } | null;
   const message = asError?.errorMessage ?? asError?.error;
   if (!response.ok || message) {
-    throw new Error(message ?? `Request failed (HTTP ${response.status}).`);
+    throw new ApiError(message ?? `Request failed (HTTP ${response.status}).`, response.status);
   }
 
   return json;
+}
+
+/** Carries the HTTP status so callers can treat 404 as "absent" not "broken". */
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
 }
 
 export interface CreatedGroup {
@@ -58,6 +67,24 @@ interface WireExpense {
   createdAt: number;
 }
 
+interface WireGroup {
+  groupId: string;
+  name: string;
+  baseCurrency: string;
+  inviteCode: string;
+  members?: Member[];
+}
+
+function toGroup(wire: WireGroup): Group {
+  return {
+    id: wire.groupId,
+    name: wire.name ?? '',
+    baseCurrency: wire.baseCurrency ?? 'EUR',
+    inviteCode: wire.inviteCode ?? '',
+    members: wire.members ?? [],
+  };
+}
+
 function toExpense(wire: WireExpense): Expense {
   return {
     id: wire.expenseId,
@@ -74,12 +101,12 @@ function toExpense(wire: WireExpense): Expense {
 export async function createGroup(
   name: string,
   baseCurrency: string,
-  memberIds: string[],
+  members: Member[],
 ): Promise<CreatedGroup> {
   const json = (await request('/groups', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, baseCurrency, memberIds }),
+    body: JSON.stringify({ name, baseCurrency, members }),
   })) as Partial<CreatedGroup>;
 
   if (!json?.groupId || !json?.inviteCode) {
@@ -123,4 +150,29 @@ export async function getBalances(groupId: string): Promise<Record<string, numbe
     throw new Error('Server did not return balances.');
   }
   return json as Record<string, number>;
+}
+
+export async function getGroup(groupId: string): Promise<Group> {
+  const json = await request(`/groups/${encodeURIComponent(groupId)}`);
+  return toGroup(json as WireGroup);
+}
+
+/** Returns null when no group has that code — a normal outcome, not an error. */
+export async function getGroupByCode(inviteCode: string): Promise<Group | null> {
+  try {
+    const json = await request(`/invites/${encodeURIComponent(inviteCode)}`);
+    return toGroup(json as WireGroup);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
+}
+
+export async function joinGroup(groupId: string, member: Member): Promise<Group> {
+  const json = await request(`/groups/${encodeURIComponent(groupId)}/members`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(member),
+  });
+  return toGroup(json as WireGroup);
 }

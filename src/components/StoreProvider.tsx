@@ -2,14 +2,14 @@
 import * as api from '@/lib/api';
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { emptyData, loadData, saveData } from '@/lib/storage';
-import type { AppData, Expense, Group } from '@/lib/types';
+import type { AppData, Expense, Group, Member } from '@/lib/types';
 
 interface Store {
   data: AppData;
   ready: boolean;
   createGroup(input: { name: string; baseCurrency: string; yourName: string }): Promise<Group>;
   joinGroup(inviteCode: string, yourName: string): Promise<Group | null>;
-  syncGroupExpenses(groupId: string): Promise<void>;
+  syncGroup (groupId: string): Promise<void>;
   addExpense(input: Omit<Expense, 'id'>): Promise<void>;
   setBudget(groupId: string, month: string, limitMinor: number): Promise<void>;
 }
@@ -18,16 +18,6 @@ const StoreContext = createContext<Store | null>(null);
 
 function newId(): string {
   return globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
-}
-
-function newInviteCode(): string {
-  // No 0/O/1/I — codes get read aloud and mistyped.
-  const alphabet = '23456789ABCDEFGHJKMNPQRSTUVWXYZ';
-  let out = '';
-  for (let i = 0; i < 8; i++) {
-    out += alphabet[Math.floor(Math.random() * alphabet.length)];
-  }
-  return `${out.slice(0, 4)}-${out.slice(4)}`;
 }
 
 export function StoreProvider({ children }: { children: ReactNode }) {
@@ -48,56 +38,62 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (ready) saveData(data);
   }, [data, ready]);
 
-    // Pulls this group's expenses from the server and makes them authoritative
-  // for that group, leaving other groups' cached rows alone.
-  //
-  // useCallback matters here: `store` is rebuilt on every render, so an
-  // unmemoised version would be a new function each time and any useEffect
-  // depending on it would re-run forever.
-  const syncGroupExpenses = useCallback(async (groupId: string) => {
-    const fromServer = await api.getExpenses(groupId);
+  // Refreshes one group and its expenses from the server. Both are needed:
+  // expenses so new spending shows up, the group itself so members who joined
+  // on another device appear here.
+  const syncGroup = useCallback(async (groupId: string) => {
+    const [group, expenses] = await Promise.all([
+      api.getGroup(groupId),
+      api.getExpenses(groupId),
+    ]);
     setData((d) => ({
       ...d,
-      expenses: [...d.expenses.filter((e) => e.groupId !== groupId), ...fromServer],
+      groups: d.groups.map((g) => (g.id === groupId ? group : g)),
+      expenses: [...d.expenses.filter((e) => e.groupId !== groupId), ...expenses],
     }));
   }, []);
 
   const store: Store = {
     data,
     ready,
-    syncGroupExpenses,
+    syncGroup,
 
-    async createGroup({ name, baseCurrency, yourName }) {
-      try {
-        const result = await api.createGroup(name.trim(), baseCurrency, [newId()]);
-        const group: Group = {
-          id: result.groupId,
-          name: name.trim(),
-          baseCurrency,
-          inviteCode: result.inviteCode,
-          members: [{ id: newId(), name: yourName.trim() || 'You' }],
-        };
-        setData((d) => ({ ...d, groups: [...d.groups, group] }));
-        return group;
-      } catch (error) {
-        console.error('Failed to create group:', error);
-        throw error;
-      }
+      async createGroup({ name, baseCurrency, yourName }) {
+      // One member object, one id — sent to the server and kept locally, so
+      // payerId means the same thing on every device.
+      const me: Member = { id: newId(), name: yourName.trim() || 'You' };
+      const { groupId, inviteCode } = await api.createGroup(name.trim(), baseCurrency, [me]);
+
+      const group: Group = {
+        id: groupId,
+        name: name.trim(),
+        baseCurrency,
+        inviteCode,
+        members: [me],
+      };
+      setData((d) => ({ ...d, groups: [...d.groups, group] }));
+      return group;
     },
 
-    async joinGroup(inviteCode, yourName) {
+      async joinGroup(inviteCode, yourName) {
       const code = inviteCode.trim().toUpperCase();
-      const group = data.groups.find((g) => g.inviteCode === code);
-      if (!group) return null;
+      const found = await api.getGroupByCode(code);
+      if (!found) return null;
 
-      const member = { id: newId(), name: yourName.trim() || 'Member' };
-      setData((d) => ({
-        ...d,
-        groups: d.groups.map((g) =>
-          g.id === group.id ? { ...g, members: [...g.members, member] } : g,
-        ),
-      }));
-      return group;
+      // Already on this device: adopt the server's copy rather than adding a
+      // duplicate member every time the code is re-entered.
+      if (data.groups.some((g) => g.id === found.id)) {
+        setData((d) => ({
+          ...d,
+          groups: d.groups.map((g) => (g.id === found.id ? found : g)),
+        }));
+        return found;
+      }
+
+      const me: Member = { id: newId(), name: yourName.trim() || 'Member' };
+      const updated = await api.joinGroup(found.id, me);
+      setData((d) => ({ ...d, groups: [...d.groups, updated] }));
+      return updated;
     },
 
         async addExpense(input) {
