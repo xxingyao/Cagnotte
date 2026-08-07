@@ -17,6 +17,7 @@ interface Store {
   syncGroup(groupId: string): Promise<void>;
   addExpense(input: Omit<Expense, 'id'>): Promise<void>;
   setBudget(groupId: string, month: string, limitMinor: number): Promise<void>;
+  deleteExpense(groupId: string, expenseId: string): Promise<void>;
 }
 
 const StoreContext = createContext<Store | null>(null);
@@ -132,6 +133,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         input.splitBetween,
       );
       setData((d) => ({ ...d, expenses: [...d.expenses, { ...input, id: expenseId }] }));
+    },
+
+    async deleteExpense(groupId, expenseId) {
+      // Server first: dropping it locally before the call succeeds would make a
+      // failed delete look like it worked until the next sync brought it back.
+      await api.deleteExpense(groupId, expenseId);
+      setData((d) => ({
+        ...d,
+        expenses: d.expenses.filter((e) => e.id !== expenseId),
+      }));
     },
 
     async setBudget(groupId, month, limitMinor) {
