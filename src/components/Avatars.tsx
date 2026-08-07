@@ -1,29 +1,32 @@
-import { members, type Member } from '@/lib/sample-data';
+const COLOURS = ['#0e6b63', '#8a5a2b', '#3f5b8f', '#7a3f6d', '#436b2f', '#8f3f3f'];
 
-function byId(id: string): Member | undefined {
-  return members.find((m) => m.id === id);
+function initials(name: string): string {
+  return name.trim().slice(0, 2).toUpperCase() || '??';
 }
 
-/** Overlapping initials, capped so a big group doesn't overflow the row. */
-export function Avatars({ ids, max = 4 }: { ids: string[]; max?: number }) {
-  const shown = ids.slice(0, max);
-  const rest = ids.length - shown.length;
+/** Stable colour per name, so the same person keeps the same badge. */
+function colourFor(name: string): string {
+  let hash = 0;
+  for (const char of name) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return COLOURS[hash % COLOURS.length];
+}
+
+export function Avatars({ names, max = 4 }: { names: string[]; max?: number }) {
+  const shown = names.slice(0, max);
+  const rest = names.length - shown.length;
 
   return (
     <div className="avatars">
-      {shown.map((id) => {
-        const member = byId(id);
-        return (
-          <span
-            key={id}
-            className="avatar"
-            style={{ background: member?.colour ?? 'var(--border-strong)' }}
-            title={member?.name}
-          >
-            {member?.initials ?? '??'}
-          </span>
-        );
-      })}
+      {shown.map((name, i) => (
+        <span
+          key={`${name}-${i}`}
+          className="avatar"
+          style={{ background: colourFor(name) }}
+          title={name}
+        >
+          {initials(name)}
+        </span>
+      ))}
       {rest > 0 && <span className="avatar avatar-rest">+{rest}</span>}
     </div>
   );
