@@ -197,3 +197,10 @@ export async function listUserGroups(userId: string): Promise<Group[]> {
   }
   return (json as WireGroup[]).map(toGroup);
 }
+
+export async function deleteExpense(groupId: string, expenseId: string): Promise<void> {
+  await request(
+    `/groups/${encodeURIComponent(groupId)}/expenses/${encodeURIComponent(expenseId)}`,
+    { method: 'DELETE' },
+  );
+}

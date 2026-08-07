@@ -11,7 +11,7 @@ import type { Member } from '@/lib/types';
 
 export default function GroupPage() {
   const params = useParams<{ groupId: string }>();
-  const { data, ready, userId, addExpense, setBudget, syncGroup } = useStore();
+  const { data, ready, userId, addExpense, deleteExpense, setBudget, syncGroup } = useStore();
   const [syncError, setSyncError] = useState<string | null>(null);
 
   const groupId = params.groupId;
@@ -185,6 +185,31 @@ export default function GroupPage() {
                           {formatMoney(expense.amountMinor, expense.currency)}
                         </div>
                       </div>
+                      <button
+                        type="button"
+                        aria-label={`Delete ${expense.description}`}
+                        title="Delete"
+                        onClick={() => {
+                          // Nothing here is recoverable — no undo, no trash.
+                          // A confirm is the cheapest thing standing between a
+                          // misplaced tap and a lost record.
+                          if (!window.confirm(`Delete "${expense.description}"?`)) return;
+                          deleteExpense(group.id, expense.id).catch((error: Error) =>
+                            setSyncError(error.message),
+                          );
+                        }}
+                        style={{
+                          background: 'none',
+                          border: 0,
+                          cursor: 'pointer',
+                          color: 'var(--ink-muted)',
+                          fontSize: 18,
+                          lineHeight: 1,
+                          padding: '0 0 0 10px',
+                        }}
+                      >
+                        ×
+                      </button>
                     </li>
                   </Fragment>
                 );
