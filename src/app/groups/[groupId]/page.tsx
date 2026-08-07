@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { Avatars } from '@/components/Avatars';
@@ -10,11 +10,28 @@ import { formatMoney, parseAmountToMinor } from '@/lib/money';
 
 export default function GroupPage() {
   const params = useParams<{ groupId: string }>();
-  const { data, ready, addExpense, setBudget } = useStore();
+  const { data, ready, addExpense, setBudget, syncGroupExpenses } = useStore();
+  const [syncError, setSyncError] = useState<string | null>(null);
+
+  const groupId = params.groupId;
+
+  // Every hook has to run before any early return, so this sits above the
+  // `!ready` guard rather than next to the code that uses its result.
+  useEffect(() => {
+    if (!ready || !groupId) return;
+    let cancelled = false;
+    syncGroupExpenses(groupId).catch((error: Error) => {
+      // Cached expenses stay on screen; the banner says they may be stale.
+      if (!cancelled) setSyncError(error.message);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [ready, groupId, syncGroupExpenses]);
 
   if (!ready) return <p className="sub">Loading…</p>;
 
-  const group = data.groups.find((g) => g.id === params.groupId);
+  const group = data.groups.find((g) => g.id === groupId);
   if (!group) {
     return (
       <main>
@@ -52,6 +69,11 @@ export default function GroupPage() {
       </p>
 
       <div className="stack">
+        {syncError && (
+          <p className="split-hint" style={{ color: 'var(--negative)' }}>
+            Couldn&apos;t reach the server: {syncError}
+          </p>
+        )}
         <BudgetCard
           spent={spent}
           limitMinor={budget?.limitMinor ?? null}
@@ -62,7 +84,11 @@ export default function GroupPage() {
 
         <AddExpenseCard
           group={group}
-          onAdd={(expense) => addExpense({ ...expense, groupId: group.id })}
+          onAdd={(expense) =>
+            addExpense({ ...expense, groupId: group.id }).catch((error: Error) =>
+              setSyncError(error.message),
+            )
+          }
         />
 
         <section className="card">

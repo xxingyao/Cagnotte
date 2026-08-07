@@ -1,4 +1,5 @@
 const API_BASE = 'https://oxfhpuu8a8.execute-api.us-east-1.amazonaws.com/dev';
+import type { Expense } from './types';
 
 /**
  * One place to talk to the Lambda API.
@@ -40,6 +41,36 @@ export interface CreatedGroup {
   inviteCode: string;
 }
 
+/**
+ * DynamoDB stores expenses under different field names than the app uses
+ * (`amount`/`expenseId` vs `amountMinor`/`id`). Translating here keeps that
+ * detail from leaking into components.
+ */
+interface WireExpense {
+  groupId: string;
+  expenseId: string;
+  description: string;
+  amount: number;
+  currency: string;
+  category: string;
+  payerId: string;
+  date: string;
+  createdAt: number;
+}
+
+function toExpense(wire: WireExpense): Expense {
+  return {
+    id: wire.expenseId,
+    groupId: wire.groupId,
+    description: wire.description ?? '',
+    amountMinor: wire.amount ?? 0,
+    currency: wire.currency ?? 'EUR',
+    category: wire.category ?? 'Other',
+    payerId: wire.payerId ?? '',
+    date: wire.date ?? '',
+  };
+}
+
 export async function createGroup(
   name: string,
   baseCurrency: string,
@@ -78,12 +109,12 @@ export async function addExpense(
   return { expenseId: json.expenseId };
 }
 
-export async function getExpenses(groupId: string): Promise<unknown[]> {
+export async function getExpenses(groupId: string): Promise<Expense[]> {
   const json = await request(`/groups/${encodeURIComponent(groupId)}/expenses`);
   if (!Array.isArray(json)) {
     throw new Error('Server did not return an expense list.');
   }
-  return json;
+  return (json as WireExpense[]).map(toExpense);
 }
 
 export async function getBalances(groupId: string): Promise<Record<string, number>> {
