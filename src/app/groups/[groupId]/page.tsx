@@ -119,11 +119,16 @@ export default function GroupPage() {
         <AddExpenseCard
           members={group.members}
           baseCurrency={group.baseCurrency}
-          onAdd={(expense) =>
-            addExpense({ ...expense, groupId: group.id }).catch((error: Error) =>
-              setSyncError(error.message),
-            )
-          }
+          onAdd={async (expense) => {
+            try {
+              await addExpense({ ...expense, groupId: group.id });
+              // Re-read from the server so the row on screen is the row that
+              // was actually stored, not an optimistic guess.
+              await syncGroup(group.id);
+            } catch (error) {
+              setSyncError((error as Error).message);
+            }
+          }}
         />
 
         <BalancesCard
