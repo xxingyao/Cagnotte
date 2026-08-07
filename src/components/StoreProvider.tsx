@@ -1,6 +1,6 @@
 'use client';
 import * as api from '@/lib/api';
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { emptyData, loadData, saveData } from '@/lib/storage';
 import type { AppData, Expense, Group } from '@/lib/types';
 
@@ -9,6 +9,7 @@ interface Store {
   ready: boolean;
   createGroup(input: { name: string; baseCurrency: string; yourName: string }): Promise<Group>;
   joinGroup(inviteCode: string, yourName: string): Promise<Group | null>;
+  syncGroupExpenses(groupId: string): Promise<void>;
   addExpense(input: Omit<Expense, 'id'>): Promise<void>;
   setBudget(groupId: string, month: string, limitMinor: number): Promise<void>;
 }
@@ -47,9 +48,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (ready) saveData(data);
   }, [data, ready]);
 
+    // Pulls this group's expenses from the server and makes them authoritative
+  // for that group, leaving other groups' cached rows alone.
+  //
+  // useCallback matters here: `store` is rebuilt on every render, so an
+  // unmemoised version would be a new function each time and any useEffect
+  // depending on it would re-run forever.
+  const syncGroupExpenses = useCallback(async (groupId: string) => {
+    const fromServer = await api.getExpenses(groupId);
+    setData((d) => ({
+      ...d,
+      expenses: [...d.expenses.filter((e) => e.groupId !== groupId), ...fromServer],
+    }));
+  }, []);
+
   const store: Store = {
     data,
     ready,
+    syncGroupExpenses,
 
     async createGroup({ name, baseCurrency, yourName }) {
       try {
@@ -84,14 +100,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       return group;
     },
 
-    async addExpense(input) {
-      try {
-        await api.addExpense(input.groupId, input.description, input.payerId, input.amountMinor, input.currency, input.category, input.date);
-        setData((d) => ({ ...d, expenses: [...d.expenses, { ...input, id: newId() }] }));
-      } catch (error) {
-        console.error('Failed to add expense:', error);
-        throw error;
-      }
+        async addExpense(input) {
+      // Take the server's id rather than minting our own, so the local row and
+      // the DynamoDB row are the same record once a sync overwrites it.
+      const { expenseId } = await api.addExpense(
+        input.groupId,
+        input.description,
+        input.payerId,
+        input.amountMinor,
+        input.currency,
+        input.category,
+        input.date,
+      );
+      setData((d) => ({ ...d, expenses: [...d.expenses, { ...input, id: expenseId }] }));
     },
 
     async setBudget(groupId, month, limitMinor) {
