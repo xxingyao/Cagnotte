@@ -106,12 +106,13 @@ function toExpense(wire: WireExpense): Expense {
 export async function createGroup(
   name: string,
   baseCurrency: string,
-  members: Member[],
+  userId: string,
+  yourName: string,
 ): Promise<CreatedGroup> {
   const json = (await request('/groups', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, baseCurrency, members }),
+    body: JSON.stringify({ name, baseCurrency, userId, yourName }),
   })) as Partial<CreatedGroup>;
 
   if (!json?.groupId || !json?.inviteCode) {
@@ -176,11 +177,23 @@ export async function getGroupByCode(inviteCode: string): Promise<Group | null> 
   }
 }
 
-export async function joinGroup(groupId: string, member: Member): Promise<Group> {
+export async function joinGroup(
+  groupId: string,
+  userId: string,
+  name: string,
+): Promise<Group> {
   const json = await request(`/groups/${encodeURIComponent(groupId)}/members`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(member),
+    body: JSON.stringify({ userId, name }),
   });
   return toGroup(json as WireGroup);
+}
+
+export async function listUserGroups(userId: string): Promise<Group[]> {
+  const json = await request(`/users/${encodeURIComponent(userId)}/groups`);
+  if (!Array.isArray(json)) {
+    throw new Error('Server did not return a group list.');
+  }
+  return (json as WireGroup[]).map(toGroup);
 }

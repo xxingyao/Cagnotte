@@ -1,35 +1,50 @@
 'use client';
+
 import * as api from '@/lib/api';
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { emptyData, loadData, saveData } from '@/lib/storage';
+import { getUserId } from '@/lib/identity';
 import type { AppData, Expense, Group, Member } from '@/lib/types';
 
 interface Store {
   data: AppData;
+  /** False until localStorage has been read. Render a placeholder while false. */
   ready: boolean;
+  /** This browser's id. Also the member id representing you in every group. */
+  userId: string;
   createGroup(input: { name: string; baseCurrency: string; yourName: string }): Promise<Group>;
   joinGroup(inviteCode: string, yourName: string): Promise<Group | null>;
-  syncGroup (groupId: string): Promise<void>;
+  syncGroup(groupId: string): Promise<void>;
   addExpense(input: Omit<Expense, 'id'>): Promise<void>;
   setBudget(groupId: string, month: string, limitMinor: number): Promise<void>;
 }
 
 const StoreContext = createContext<Store | null>(null);
 
-function newId(): string {
-  return globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
-}
-
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<AppData>(emptyData);
   const [ready, setReady] = useState(false);
+  const [userId, setUserId] = useState('');
 
-  // Load AFTER the first render. Reading localStorage during render would make
-  // the server-rendered HTML and the client disagree — React calls that a
-  // hydration mismatch and it produces confusing, intermittent bugs.
+  // Cache first so the page paints immediately, then the server's list replaces
+  // it. This is what makes the dashboard survive a cleared cache: the groups
+  // come back from user-groups rather than from this browser.
+  //
+  // Reading localStorage during render instead would make the server-rendered
+  // HTML and the client disagree — a hydration mismatch, which produces
+  // confusing intermittent bugs.
   useEffect(() => {
+    const id = getUserId();
+    setUserId(id);
     setData(loadData());
     setReady(true);
+
+    api
+      .listUserGroups(id)
+      .then((groups) => setData((d) => ({ ...d, groups })))
+      .catch(() => {
+        // Offline or server down: the cached list is still usable.
+      });
   }, []);
 
   // Save on every change, but not before the initial load — that would
@@ -41,6 +56,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // Refreshes one group and its expenses from the server. Both are needed:
   // expenses so new spending shows up, the group itself so members who joined
   // on another device appear here.
+  //
+  // useCallback matters: `store` is rebuilt on every render, so an unmemoised
+  // version would be a new function each time and any useEffect depending on it
+  // would re-run forever.
   const syncGroup = useCallback(async (groupId: string) => {
     const [group, expenses] = await Promise.all([
       api.getGroup(groupId),
@@ -56,13 +75,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const store: Store = {
     data,
     ready,
+    userId,
     syncGroup,
 
-      async createGroup({ name, baseCurrency, yourName }) {
-      // One member object, one id — sent to the server and kept locally, so
-      // payerId means the same thing on every device.
-      const me: Member = { id: newId(), name: yourName.trim() || 'You' };
-      const { groupId, inviteCode } = await api.createGroup(name.trim(), baseCurrency, [me]);
+    async createGroup({ name, baseCurrency, yourName }) {
+      // Your member id IS this device's id, so "which member am I" needs no
+      // extra bookkeeping anywhere in the app.
+      const me: Member = { id: userId, name: yourName.trim() || 'You' };
+      const { groupId, inviteCode } = await api.createGroup(
+        name.trim(),
+        baseCurrency,
+        userId,
+        me.name,
+      );
 
       const group: Group = {
         id: groupId,
@@ -75,29 +100,28 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       return group;
     },
 
-      async joinGroup(inviteCode, yourName) {
+    async joinGroup(inviteCode, yourName) {
       const code = inviteCode.trim().toUpperCase();
       const found = await api.getGroupByCode(code);
       if (!found) return null;
 
-      // Already on this device: adopt the server's copy rather than adding a
-      // duplicate member every time the code is re-entered.
-      if (data.groups.some((g) => g.id === found.id)) {
-        setData((d) => ({
-          ...d,
-          groups: d.groups.map((g) => (g.id === found.id ? found : g)),
-        }));
-        return found;
-      }
+      // The server dedupes by userId, so re-entering your own code is safe —
+      // it returns the group unchanged rather than adding you twice.
+      const updated = await api.joinGroup(found.id, userId, yourName.trim() || 'Member');
 
-      const me: Member = { id: newId(), name: yourName.trim() || 'Member' };
-      const updated = await api.joinGroup(found.id, me);
-      setData((d) => ({ ...d, groups: [...d.groups, updated] }));
+      setData((d) => ({
+        ...d,
+        groups: d.groups.some((g) => g.id === updated.id)
+          ? d.groups.map((g) => (g.id === updated.id ? updated : g))
+          : [...d.groups, updated],
+      }));
       return updated;
     },
 
     async addExpense(input) {
-        const { expenseId } = await api.addExpense(
+      // Take the server's id rather than minting our own, so the local row and
+      // the DynamoDB row are the same record once a sync overwrites it.
+      const { expenseId } = await api.addExpense(
         input.groupId,
         input.description,
         input.payerId,
@@ -107,6 +131,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         input.date,
         input.splitBetween,
       );
+      setData((d) => ({ ...d, expenses: [...d.expenses, { ...input, id: expenseId }] }));
     },
 
     async setBudget(groupId, month, limitMinor) {
