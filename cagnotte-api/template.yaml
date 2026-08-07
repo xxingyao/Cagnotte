@@ -1,0 +1,110 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    MemorySize: 256
+    Timeout: 30
+    Environment:
+      Variables:
+        GROUPS_TABLE: cagnotte-groups
+        EXPENSES_TABLE: cagnotte-expenses
+
+Resources:
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource:
+                  - arn:aws:dynamodb:us-east-1:*:table/cagnotte-groups
+                  - arn:aws:dynamodb:us-east-1:*:table/cagnotte-expenses
+
+  CreateGroupFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: handlers/index.createGroup
+      Role: !GetAtt LambdaRole.Arn
+      Events:
+        CreateGroupAPI:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CagnotteAPI
+            Path: /groups
+            Method: POST
+
+  AddExpenseFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: handlers/index.addExpense
+      Role: !GetAtt LambdaRole.Arn
+      Events:
+        AddExpenseAPI:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CagnotteAPI
+            Path: /expenses
+            Method: POST
+
+  GetExpensesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: handlers/index.getExpenses
+      Role: !GetAtt LambdaRole.Arn
+      Events:
+        GetExpensesAPI:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CagnotteAPI
+            Path: /groups/{groupId}/expenses
+            Method: GET
+
+  GetBalancesFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: handlers/index.getBalances
+      Role: !GetAtt LambdaRole.Arn
+      Events:
+        GetBalancesAPI:
+          Type: Api
+          Properties:
+            RestApiId: !Ref CagnotteAPI
+            Path: /groups/{groupId}/balances
+            Method: GET
+
+  CagnotteAPI:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: dev
+      Cors:
+        AllowMethods: "'GET,POST,OPTIONS'"
+        AllowHeaders: "'Content-Type'"
+        AllowOrigin: "'*'"
+
+Outputs:
+  CagnotteAPIEndpoint:
+    Description: Cagnotte API endpoint
+    Value: !Sub 'https://${CagnotteAPI}.execute-api.${AWS::Region}.amazonaws.com/dev'
