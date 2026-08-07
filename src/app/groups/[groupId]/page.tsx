@@ -3,14 +3,13 @@
 import { Fragment, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { Avatars } from '@/components/Avatars';
 import { useStore } from '@/components/StoreProvider';
 import { CATEGORIES, CATEGORY_EMOJI, CURRENCIES } from '@/lib/options';
 import { formatMoney, parseAmountToMinor } from '@/lib/money';
 
 export default function GroupPage() {
   const params = useParams<{ groupId: string }>();
-  const { data, ready, addExpense, setBudget, syncGroupExpenses } = useStore();
+  const { data, ready, addExpense, setBudget, syncGroup } = useStore();
   const [syncError, setSyncError] = useState<string | null>(null);
 
   const groupId = params.groupId;
@@ -20,14 +19,14 @@ export default function GroupPage() {
   useEffect(() => {
     if (!ready || !groupId) return;
     let cancelled = false;
-    syncGroupExpenses(groupId).catch((error: Error) => {
+    syncGroup(groupId).catch((error: Error) => {
       // Cached expenses stay on screen; the banner says they may be stale.
       if (!cancelled) setSyncError(error.message);
     });
     return () => {
       cancelled = true;
     };
-  }, [ready, groupId, syncGroupExpenses]);
+  }, [ready, groupId, syncGroup]);
 
   if (!ready) return <p className="sub">Loading…</p>;
 
@@ -74,6 +73,7 @@ export default function GroupPage() {
             Couldn&apos;t reach the server: {syncError}
           </p>
         )}
+
         <BudgetCard
           spent={spent}
           limitMinor={budget?.limitMinor ?? null}

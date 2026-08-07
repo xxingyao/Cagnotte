@@ -52,13 +52,25 @@ function CreateGroupCard({ onCreate }: { onCreate: ReturnType<typeof useStore>['
   const [name, setName] = useState('');
   const [yourName, setYourName] = useState('');
   const [baseCurrency, setBaseCurrency] = useState('EUR');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  function submit(event: React.FormEvent) {
+  // Creating a group is a network call now, so it can fail and it can be slow.
+  // Without the await the form would clear itself before the server answered.
+  async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (!name.trim()) return;
-    onCreate({ name, baseCurrency, yourName });
-    setName('');
-    setYourName('');
+    setError(null);
+    setBusy(true);
+    try {
+      await onCreate({ name, baseCurrency, yourName });
+      setName('');
+      setYourName('');
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -95,7 +107,10 @@ function CreateGroupCard({ onCreate }: { onCreate: ReturnType<typeof useStore>['
           ))}
         </select>
       </label>
-      <button type="submit" className="btn">Create group</button>
+      {error && <p className="split-hint" style={{ color: 'var(--negative)' }}>{error}</p>}
+      <button type="submit" className="btn" disabled={busy}>
+        {busy ? 'Creating…' : 'Create group'}
+      </button>
     </form>
   );
 }
@@ -104,17 +119,27 @@ function JoinGroupCard({ onJoin }: { onJoin: ReturnType<typeof useStore>['joinGr
   const [code, setCode] = useState('');
   const [yourName, setYourName] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  function submit(event: React.FormEvent) {
+  // Without the await, `group` would be the Promise itself — always truthy —
+  // so a wrong code would silently look like it worked.
+  async function submit(event: React.FormEvent) {
     event.preventDefault();
-    const group = onJoin(code, yourName);
-    if (!group) {
-      setError('No group with that code on this device.');
-      return;
-    }
     setError(null);
-    setCode('');
-    setYourName('');
+    setBusy(true);
+    try {
+      const group = await onJoin(code, yourName);
+      if (!group) {
+        setError('No group with that code.');
+        return;
+      }
+      setCode('');
+      setYourName('');
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -140,7 +165,9 @@ function JoinGroupCard({ onJoin }: { onJoin: ReturnType<typeof useStore>['joinGr
         />
       </label>
       {error && <p className="split-hint" style={{ color: 'var(--negative)' }}>{error}</p>}
-      <button type="submit" className="btn btn-ghost">Join with code</button>
+      <button type="submit" className="btn btn-ghost" disabled={busy}>
+        {busy ? 'Joining…' : 'Join with code'}
+      </button>
     </form>
   );
 }
