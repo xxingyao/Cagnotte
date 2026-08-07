@@ -1,17 +1,16 @@
 'use client';
-
+import * as api from '@/lib/api';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { emptyData, loadData, saveData } from '@/lib/storage';
 import type { AppData, Expense, Group } from '@/lib/types';
 
 interface Store {
   data: AppData;
-  /** False until localStorage has been read. Render a placeholder while false. */
   ready: boolean;
-  createGroup(input: { name: string; baseCurrency: string; yourName: string }): Group;
-  joinGroup(inviteCode: string, yourName: string): Group | null;
-  addExpense(input: Omit<Expense, 'id'>): void;
-  setBudget(groupId: string, month: string, limitMinor: number): void;
+  createGroup(input: { name: string; baseCurrency: string; yourName: string }): Promise<Group>;
+  joinGroup(inviteCode: string, yourName: string): Promise<Group | null>;
+  addExpense(input: Omit<Expense, 'id'>): Promise<void>;
+  setBudget(groupId: string, month: string, limitMinor: number): Promise<void>;
 }
 
 const StoreContext = createContext<Store | null>(null);
@@ -52,19 +51,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     data,
     ready,
 
-    createGroup({ name, baseCurrency, yourName }) {
-      const group: Group = {
-        id: newId(),
-        name: name.trim(),
-        baseCurrency,
-        inviteCode: newInviteCode(),
-        members: [{ id: newId(), name: yourName.trim() || 'You' }],
-      };
-      setData((d) => ({ ...d, groups: [...d.groups, group] }));
-      return group;
+    async createGroup({ name, baseCurrency, yourName }) {
+      try {
+        const result = await api.createGroup(name.trim(), baseCurrency, [newId()]);
+        const group: Group = {
+          id: result.groupId,
+          name: name.trim(),
+          baseCurrency,
+          inviteCode: result.inviteCode,
+          members: [{ id: newId(), name: yourName.trim() || 'You' }],
+        };
+        setData((d) => ({ ...d, groups: [...d.groups, group] }));
+        return group;
+      } catch (error) {
+        console.error('Failed to create group:', error);
+        throw error;
+      }
     },
 
-    joinGroup(inviteCode, yourName) {
+    async joinGroup(inviteCode, yourName) {
       const code = inviteCode.trim().toUpperCase();
       const group = data.groups.find((g) => g.inviteCode === code);
       if (!group) return null;
@@ -79,11 +84,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       return group;
     },
 
-    addExpense(input) {
-      setData((d) => ({ ...d, expenses: [...d.expenses, { ...input, id: newId() }] }));
+    async addExpense(input) {
+      try {
+        await api.addExpense(input.groupId, input.description, input.payerId, input.amountMinor, input.currency, input.category, input.date);
+        setData((d) => ({ ...d, expenses: [...d.expenses, { ...input, id: newId() }] }));
+      } catch (error) {
+        console.error('Failed to add expense:', error);
+        throw error;
+      }
     },
 
-    setBudget(groupId, month, limitMinor) {
+    async setBudget(groupId, month, limitMinor) {
       setData((d) => ({
         ...d,
         budgets: [
