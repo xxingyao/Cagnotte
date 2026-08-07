@@ -68,6 +68,7 @@ interface WireExpense {
   payerId: string;
   date: string;
   createdAt: number;
+  splitBetween?: string[];
 }
 
 interface WireGroup {
@@ -98,6 +99,7 @@ function toExpense(wire: WireExpense): Expense {
     category: wire.category ?? 'Other',
     payerId: wire.payerId ?? '',
     date: wire.date ?? '',
+    splitBetween: wire.splitBetween ?? [wire.payerId],
   };
 }
 
@@ -126,11 +128,14 @@ export async function addExpense(
   currency: string,
   category: string,
   date: string,
+  splitBetween: string[],
 ): Promise<{ expenseId: string }> {
   const json = (await request('/expenses', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ groupId, description, payerId, amount, currency, category, date }),
+    body: JSON.stringify({
+      groupId, description, payerId, amount, currency, category, date, splitBetween,
+    }),
   })) as { expenseId?: string };
 
   if (!json?.expenseId) {
