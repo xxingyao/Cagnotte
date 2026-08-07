@@ -96,10 +96,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       return updated;
     },
 
-        async addExpense(input) {
-      // Take the server's id rather than minting our own, so the local row and
-      // the DynamoDB row are the same record once a sync overwrites it.
-      const { expenseId } = await api.addExpense(
+    async addExpense(input) {
+        const { expenseId } = await api.addExpense(
         input.groupId,
         input.description,
         input.payerId,
@@ -107,8 +105,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         input.currency,
         input.category,
         input.date,
+        input.splitBetween,
       );
-      setData((d) => ({ ...d, expenses: [...d.expenses, { ...input, id: expenseId }] }));
     },
 
     async setBudget(groupId, month, limitMinor) {

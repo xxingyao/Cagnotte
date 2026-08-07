@@ -1,11 +1,13 @@
 'use client';
 
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useStore } from '@/components/StoreProvider';
 import { CATEGORIES, CATEGORY_EMOJI, CURRENCIES } from '@/lib/options';
 import { formatMoney, parseAmountToMinor } from '@/lib/money';
+import { computeBalances, computeSettlements, type Balance } from '@/lib/balances';
+import type { Member } from '@/lib/types';
 
 export default function GroupPage() {
   const params = useParams<{ groupId: string }>();
@@ -28,9 +30,25 @@ export default function GroupPage() {
     };
   }, [ready, groupId, syncGroup]);
 
+  const group = data.groups.find((g) => g.id === groupId);
+
+  const groupExpenses = useMemo(
+    () =>
+      data.expenses
+        .filter((e) => e.groupId === groupId)
+        .sort((a, b) => b.date.localeCompare(a.date)),
+    [data.expenses, groupId],
+  );
+
+  const balances = useMemo(
+    () => (group ? computeBalances(groupExpenses, group.members, group.baseCurrency) : []),
+    [groupExpenses, group],
+  );
+
+  const settlements = useMemo(() => computeSettlements(balances), [balances]);
+
   if (!ready) return <p className="sub">Loading…</p>;
 
-  const group = data.groups.find((g) => g.id === groupId);
   if (!group) {
     return (
       <main>
@@ -41,15 +59,16 @@ export default function GroupPage() {
   }
 
   const month = new Date().toISOString().slice(0, 7);
-  const groupExpenses = data.expenses
-    .filter((e) => e.groupId === group.id)
-    .sort((a, b) => b.date.localeCompare(a.date));
 
   // Only same-currency expenses count toward the budget for now; converting
   // the others needs exchange rates, which is a later step.
   const spent = groupExpenses
     .filter((e) => e.date.startsWith(month) && e.currency === group.baseCurrency)
     .reduce((sum, e) => sum + e.amountMinor, 0);
+
+  const otherCurrencyCount = groupExpenses.filter(
+    (e) => e.currency !== group.baseCurrency,
+  ).length;
 
   const budget = data.budgets.find((b) => b.groupId === group.id && b.month === month);
   const percent = budget && budget.limitMinor > 0
@@ -83,13 +102,22 @@ export default function GroupPage() {
         />
 
         <AddExpenseCard
-          group={group}
+          members={group.members}
+          baseCurrency={group.baseCurrency}
           onAdd={(expense) =>
             addExpense({ ...expense, groupId: group.id }).catch((error: Error) =>
               setSyncError(error.message),
             )
           }
         />
+
+        <BalancesCard
+          balances={balances}
+          currency={group.baseCurrency}
+          excludedCount={otherCurrencyCount}
+        />
+
+        <SettleUpCard settlements={settlements} currency={group.baseCurrency} />
 
         <section className="card">
           <div className="card-head">
@@ -112,7 +140,11 @@ export default function GroupPage() {
                       </span>
                       <div className="row-main">
                         <div className="row-title">{expense.description}</div>
-                        <div className="row-sub">{payer?.name ?? 'Someone'} paid</div>
+                        <div className="row-sub">
+                          {payer?.name ?? 'Someone'} paid · split{' '}
+                          {expense.splitBetween.length} way
+                          {expense.splitBetween.length === 1 ? '' : 's'}
+                        </div>
                       </div>
                       <div className="row-end">
                         <div className="amount">
@@ -128,6 +160,95 @@ export default function GroupPage() {
         </section>
       </div>
     </main>
+  );
+}
+
+function BalancesCard({
+  balances, currency, excludedCount,
+}: {
+  balances: Balance[];
+  currency: string;
+  excludedCount: number;
+}) {
+  const anyActivity = balances.some((b) => b.paidMinor !== 0 || b.owedMinor !== 0);
+
+  return (
+    <section className="card">
+      <div className="card-head">
+        <h2 className="card-title">Balances</h2>
+      </div>
+
+      {!anyActivity ? (
+        <p className="sub">Nothing to balance yet.</p>
+      ) : (
+        <ul className="rows">
+          {balances.map((balance) => {
+            const tone = balance.netMinor > 0 ? 'pos' : balance.netMinor < 0 ? 'neg' : 'dim';
+            const standing =
+              balance.netMinor > 0
+                ? `is owed ${formatMoney(balance.netMinor, currency)}`
+                : balance.netMinor < 0
+                  ? `owes ${formatMoney(-balance.netMinor, currency)}`
+                  : 'settled up';
+            return (
+              <li key={balance.memberId} className="row">
+                <div className="row-main">
+                  <div className="row-title">{balance.name}</div>
+                  <div className="row-sub">
+                    paid {formatMoney(balance.paidMinor, currency)}
+                  </div>
+                </div>
+                <div className="row-end">
+                  <span className={`amount ${tone}`}>{standing}</span>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {excludedCount > 0 && (
+        <p className="split-hint" style={{ marginBottom: 0 }}>
+          {excludedCount} expense{excludedCount === 1 ? '' : 's'} not in {currency}{' '}
+          {excludedCount === 1 ? 'is' : 'are'} left out — converting needs exchange rates.
+        </p>
+      )}
+    </section>
+  );
+}
+
+function SettleUpCard({
+  settlements, currency,
+}: {
+  settlements: { fromId: string; fromName: string; toId: string; toName: string; amountMinor: number }[];
+  currency: string;
+}) {
+  if (settlements.length === 0) return null;
+
+  return (
+    <section className="card">
+      <div className="card-head">
+        <h2 className="card-title">Settle up</h2>
+        <span className="sub">
+          {settlements.length} payment{settlements.length === 1 ? '' : 's'} clears the group
+        </span>
+      </div>
+
+      {settlements.map((settlement, i) => (
+        <div key={`${settlement.fromId}-${settlement.toId}-${i}`} className="settle">
+          <strong>{settlement.fromName}</strong>
+          <span className="settle-arrow">pays</span>
+          <strong>{settlement.toName}</strong>
+          <span className="row-end amount" style={{ marginLeft: 'auto' }}>
+            {formatMoney(settlement.amountMinor, currency)}
+          </span>
+        </div>
+      ))}
+
+      <p className="split-hint" style={{ marginTop: 12, marginBottom: 0 }}>
+        Settle outside the app — Cagnotte only keeps the record.
+      </p>
+    </section>
   );
 }
 
@@ -201,23 +322,41 @@ function BudgetCard({
 }
 
 function AddExpenseCard({
-  group, onAdd,
+  members, baseCurrency, onAdd,
 }: {
-  group: { baseCurrency: string; members: { id: string; name: string }[] };
+  members: Member[];
+  baseCurrency: string;
   onAdd: (e: {
     description: string; amountMinor: number; currency: string;
-    category: string; payerId: string; date: string;
+    category: string; payerId: string; date: string; splitBetween: string[];
   }) => void;
 }) {
   const today = new Date().toISOString().slice(0, 10);
 
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
-  const [currency, setCurrency] = useState(group.baseCurrency);
+  const [currency, setCurrency] = useState(baseCurrency);
   const [category, setCategory] = useState('Food');
-  const [payerId, setPayerId] = useState(group.members[0]?.id ?? '');
+  const [payerId, setPayerId] = useState(members[0]?.id ?? '');
   const [date, setDate] = useState(today);
+  const [splitBetween, setSplitBetween] = useState<string[]>(members.map((m) => m.id));
   const [error, setError] = useState<string | null>(null);
+
+  // Someone joining mid-session should land in the split by default. Keyed on
+  // the joined ids rather than the array itself — every sync hands back a new
+  // array object, which would otherwise wipe the user's selection mid-edit.
+  const memberKey = members.map((m) => m.id).join(',');
+  useEffect(() => {
+    setSplitBetween(members.map((m) => m.id));
+    setPayerId((current) => (members.some((m) => m.id === current) ? current : members[0]?.id ?? ''));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [memberKey]);
+
+  function toggleSharer(id: string) {
+    setSplitBetween((current) =>
+      current.includes(id) ? current.filter((x) => x !== id) : [...current, id],
+    );
+  }
 
   function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -226,11 +365,23 @@ function AddExpenseCard({
       setError('Enter an amount like 45 or 45.50');
       return;
     }
-    onAdd({ description: description.trim(), amountMinor, currency, category, payerId, date });
+    if (splitBetween.length === 0) {
+      setError('Pick at least one person to split this between.');
+      return;
+    }
+    onAdd({
+      description: description.trim(), amountMinor, currency,
+      category, payerId, date, splitBetween,
+    });
     setDescription('');
     setAmount('');
     setError(null);
   }
+
+  const perPerson =
+    parseAmountToMinor(amount, currency) !== null && splitBetween.length > 0
+      ? Math.floor(parseAmountToMinor(amount, currency)! / splitBetween.length)
+      : null;
 
   return (
     <form className="card" onSubmit={submit}>
@@ -267,7 +418,7 @@ function AddExpenseCard({
           <span className="field-label">Paid by</span>
           <select className="select" value={payerId}
                   onChange={(e) => setPayerId(e.target.value)}>
-            {group.members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+            {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
           </select>
         </label>
       </div>
@@ -277,6 +428,26 @@ function AddExpenseCard({
         <input className="input" type="date" value={date} required
                onChange={(e) => setDate(e.target.value)} />
       </label>
+
+      <div className="field">
+        <span className="field-label">Split between</span>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 4 }}>
+          {members.map((m) => (
+            <label key={m.id}
+                   style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14 }}>
+              <input type="checkbox" checked={splitBetween.includes(m.id)}
+                     onChange={() => toggleSharer(m.id)} />
+              {m.name}
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {perPerson !== null && splitBetween.length > 1 && (
+        <p className="split-hint">
+          About {formatMoney(perPerson, currency)} each, {splitBetween.length} ways.
+        </p>
+      )}
 
       {error && <p className="split-hint" style={{ color: 'var(--negative)' }}>{error}</p>}
       <button type="submit" className="btn">Add expense</button>

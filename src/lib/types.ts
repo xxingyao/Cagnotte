@@ -22,6 +22,8 @@ export interface Expense {
   currency: string;
   category: string;
   payerId: string;
+  /** Member ids sharing this cost. At least one; usually everyone. */
+  splitBetween: string[];
   /** YYYY-MM-DD */
   date: string;
 }
