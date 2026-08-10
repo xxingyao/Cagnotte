@@ -15,7 +15,9 @@ export default function DashboardPage() {
     return (
       <main>
         <h1 className="page-title">Cagnotte</h1>
-        <p className="page-sub">Sign in to see your groups on any device.</p>
+        <p className="page-sub">
+          Shared budgets and expense splitting. Sign in to see your groups on any device.
+        </p>
         <button type="button" className="btn" onClick={() => login()}>
           Sign in or create an account
         </button>
@@ -25,8 +27,9 @@ export default function DashboardPage() {
 
   return (
     <main>
+      <h1 className="page-title">Your groups</h1>
       <p className="page-sub">
-        {user.email} ·{' '}
+        {user.name || user.email} ·{' '}
         <button
           type="button"
           className="sub"
@@ -36,14 +39,10 @@ export default function DashboardPage() {
           sign out
         </button>
       </p>
-      <h1 className="page-title">Your groups</h1>
-      <p className="page-sub">
-        {data.groups.length === 0
-          ? 'No groups yet — start one below.'
-          : `${data.groups.length} shared ${data.groups.length === 1 ? 'pot' : 'pots'}.`}
-      </p>
 
-      {data.groups.length > 0 && (
+      {data.groups.length === 0 ? (
+        <p className="sub">No groups yet — start one below.</p>
+      ) : (
         <ul className="group-list">
           {data.groups.map((group) => (
             <li key={group.id}>
@@ -73,22 +72,18 @@ export default function DashboardPage() {
 
 function CreateGroupCard({ onCreate }: { onCreate: ReturnType<typeof useStore>['createGroup'] }) {
   const [name, setName] = useState('');
-  const [yourName, setYourName] = useState('');
   const [baseCurrency, setBaseCurrency] = useState('EUR');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // Creating a group is a network call now, so it can fail and it can be slow.
-  // Without the await the form would clear itself before the server answered.
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     if (!name.trim()) return;
     setError(null);
     setBusy(true);
     try {
-      await onCreate({ name, baseCurrency, yourName });
+      await onCreate({ name, baseCurrency });
       setName('');
-      setYourName('');
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -107,15 +102,6 @@ function CreateGroupCard({ onCreate }: { onCreate: ReturnType<typeof useStore>['
           onChange={(e) => setName(e.target.value)}
           placeholder="Lisbon flat"
           required
-        />
-      </label>
-      <label className="field">
-        <span className="field-label">Your name</span>
-        <input
-          className="input"
-          value={yourName}
-          onChange={(e) => setYourName(e.target.value)}
-          placeholder="Mei"
         />
       </label>
       <label className="field">
@@ -140,7 +126,6 @@ function CreateGroupCard({ onCreate }: { onCreate: ReturnType<typeof useStore>['
 
 function JoinGroupCard({ onJoin }: { onJoin: ReturnType<typeof useStore>['joinGroup'] }) {
   const [code, setCode] = useState('');
-  const [yourName, setYourName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -151,13 +136,12 @@ function JoinGroupCard({ onJoin }: { onJoin: ReturnType<typeof useStore>['joinGr
     setError(null);
     setBusy(true);
     try {
-      const group = await onJoin(code, yourName);
+      const group = await onJoin(code);
       if (!group) {
         setError('No group with that code.');
         return;
       }
       setCode('');
-      setYourName('');
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -176,15 +160,6 @@ function JoinGroupCard({ onJoin }: { onJoin: ReturnType<typeof useStore>['joinGr
           onChange={(e) => setCode(e.target.value.toUpperCase())}
           placeholder="7KQ4-B2XM"
           required
-        />
-      </label>
-      <label className="field">
-        <span className="field-label">Your name</span>
-        <input
-          className="input"
-          value={yourName}
-          onChange={(e) => setYourName(e.target.value)}
-          placeholder="Tomás"
         />
       </label>
       {error && <p className="split-hint" style={{ color: 'var(--negative)' }}>{error}</p>}
