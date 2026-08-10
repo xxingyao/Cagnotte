@@ -30,8 +30,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [user, setUser] = useState<User | null>(null);
 
-  // Derived, not state. Held as separate state it would need its own setter and
-  // could drift out of step with `user` — which is exactly what went wrong.
+  // Derived, not state. Held separately it would need its own setter and could
+  // drift out of step with `user` — which is exactly what went wrong before.
   const userId = user?.id ?? '';
 
   useEffect(() => {
@@ -53,12 +53,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // Cache paints first, then the server's list replaces it — this is what
       // makes the dashboard survive a cleared cache.
       api
-        .listUserGroups(signedIn.id)
+        .listUserGroups()
         .then((groups) => {
           if (!cancelled) setData((d) => ({ ...d, groups }));
         })
-        .catch(() => {
-          // Offline or server down: the cached list is still usable.
+        .catch((error: Error) => {
+          // The cached list still shows, so a silent catch here can hide a
+          // broken route for weeks. This is the only trace it left.
+          console.warn('Could not refresh groups from the server:', error.message);
         });
     })();
 
@@ -104,15 +106,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     async createGroup({ name, baseCurrency }) {
       if (!user) throw new Error('You need to be signed in to create a group.');
 
-      // Display name comes from the account, so you're the same person in every
-      // group. Falls back to the email if the name claim is somehow empty.
+      // Your member id IS your Cognito sub, and the display name comes from the
+      // account — so you're the same person in every group, on every device.
       const me: Member = { id: user.id, name: user.name || user.email || 'You' };
-      const { groupId, inviteCode } = await api.createGroup(
-        name.trim(),
-        baseCurrency,
-        user.id,
-        me.name,
-      );
+      const { groupId, inviteCode } = await api.createGroup(name.trim(), baseCurrency, me.name);
 
       const group: Group = {
         id: groupId,
@@ -132,13 +129,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const found = await api.getGroupByCode(code);
       if (!found) return null;
 
-      // The server dedupes by userId, so re-entering your own code is safe —
-      // it returns the group unchanged rather than adding you twice.
-      const updated = await api.joinGroup(
-        found.id,
-        user.id,
-        user.name || user.email || 'Member',
-      );
+      // The server dedupes by the id in your token, so re-entering your own
+      // code is safe — it returns the group unchanged rather than adding you
+      // twice.
+      const updated = await api.joinGroup(found.id, user.name || user.email || 'Member');
 
       setData((d) => ({
         ...d,
