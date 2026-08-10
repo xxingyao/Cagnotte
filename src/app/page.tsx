@@ -7,12 +7,35 @@ import { useStore } from '@/components/StoreProvider';
 import { CURRENCIES } from '@/lib/options';
 
 export default function DashboardPage() {
-  const { data, ready, createGroup, joinGroup } = useStore();
+  const { data, ready, user, login, logout, createGroup, joinGroup } = useStore();
 
   if (!ready) return <p className="sub">Loading…</p>;
 
+  if (!user) {
+    return (
+      <main>
+        <h1 className="page-title">Cagnotte</h1>
+        <p className="page-sub">Sign in to see your groups on any device.</p>
+        <button type="button" className="btn" onClick={() => login()}>
+          Sign in or create an account
+        </button>
+      </main>
+    );
+  }
+
   return (
     <main>
+      <p className="page-sub">
+        {user.email} ·{' '}
+        <button
+          type="button"
+          className="sub"
+          onClick={logout}
+          style={{ background: 'none', border: 0, cursor: 'pointer', textDecoration: 'underline' }}
+        >
+          sign out
+        </button>
+      </p>
       <h1 className="page-title">Your groups</h1>
       <p className="page-sub">
         {data.groups.length === 0
