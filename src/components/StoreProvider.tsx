@@ -19,8 +19,8 @@ interface Store {
   joinGroup(inviteCode: string, yourName: string): Promise<Group | null>;
   syncGroup(groupId: string): Promise<void>;
   addExpense(input: Omit<Expense, 'id'>): Promise<void>;
-  setBudget(groupId: string, month: string, limitMinor: number): Promise<void>;
   deleteExpense(groupId: string, expenseId: string): Promise<void>;
+  setBudget(groupId: string, month: string, limitMinor: number): Promise<void>;
 }
 
 const StoreContext = createContext<Store | null>(null);
@@ -28,17 +28,13 @@ const StoreContext = createContext<Store | null>(null);
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<AppData>(emptyData);
   const [ready, setReady] = useState(false);
-  const [userId, setUserId] = useState('');
   const [user, setUser] = useState<User | null>(null);
 
-  // Cache first so the page paints immediately, then the server's list replaces
-  // it. This is what makes the dashboard survive a cleared cache: the groups
-  // come back from user-groups rather than from this browser.
-  //
-  // Reading localStorage during render instead would make the server-rendered
-  // HTML and the client disagree — a hydration mismatch, which produces
-  // confusing intermittent bugs.
-    useEffect(() => {
+  // Derived, not state. Held as separate state it would need its own setter and
+  // could drift out of step with `user` — which is exactly what went wrong.
+  const userId = user?.id ?? '';
+
+  useEffect(() => {
     let cancelled = false;
 
     (async () => {
@@ -54,6 +50,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
       if (!signedIn) return;
 
+      // Cache paints first, then the server's list replaces it — this is what
+      // makes the dashboard survive a cleared cache.
       api
         .listUserGroups(signedIn.id)
         .then((groups) => {
@@ -97,16 +95,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const store: Store = {
     data,
     ready,
-    userId: user?.id ?? '',
+    userId,
     user,
     login,
     logout,
     syncGroup,
 
     async createGroup({ name, baseCurrency, yourName }) {
-      // Your member id IS this device's id, so "which member am I" needs no
+      // Better a clear message here than "userId is required" from a Lambda.
+      if (!userId) throw new Error('You need to be signed in to create a group.');
+
+      // Your member id IS your Cognito sub, so "which member am I" needs no
       // extra bookkeeping anywhere in the app.
-      const me: Member = { id: userId, name: yourName.trim() || 'You' };
+      const me: Member = { id: userId, name: yourName.trim() || user?.name || 'You' };
       const { groupId, inviteCode } = await api.createGroup(
         name.trim(),
         baseCurrency,
@@ -126,13 +127,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     },
 
     async joinGroup(inviteCode, yourName) {
+      if (!userId) throw new Error('You need to be signed in to join a group.');
+
       const code = inviteCode.trim().toUpperCase();
       const found = await api.getGroupByCode(code);
       if (!found) return null;
 
       // The server dedupes by userId, so re-entering your own code is safe —
       // it returns the group unchanged rather than adding you twice.
-      const updated = await api.joinGroup(found.id, userId, yourName.trim() || 'Member');
+      const updated = await api.joinGroup(
+        found.id,
+        userId,
+        yourName.trim() || user?.name || 'Member',
+      );
 
       setData((d) => ({
         ...d,

@@ -24,6 +24,7 @@ export interface User {
   /** Cognito's `sub` — stable for this person across every device. */
   id: string;
   email: string;
+  name: string;
 }
 
 /** Redirect URI has to match Cognito exactly, so derive it rather than configure it. */
@@ -75,8 +76,8 @@ function clearTokens(): void {
  * verify, and that's the Cognito authorizer's job. Never trust these claims
  * for anything that grants access.
  */
-function decodeClaims(idToken: string): { sub?: string; email?: string; exp?: number } {
-  try {
+function decodeClaims(idToken: string): { sub?: string; email?: string; name?: string; exp?: number } {
+    try {
     const payload = idToken.split('.')[1];
     const json = atob(payload.replace(/-/g, '+').replace(/_/g, '/'));
     return JSON.parse(json);
@@ -200,5 +201,5 @@ export function currentUser(): User | null {
   if (!tokens) return null;
   const claims = decodeClaims(tokens.idToken);
   if (!claims.sub) return null;
-  return { id: claims.sub, email: claims.email ?? '' };
+  return { id: claims.sub, email: claims.email ?? '', name: claims.name ?? '' };
 }
