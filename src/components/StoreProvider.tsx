@@ -15,8 +15,8 @@ interface Store {
   user: User | null;
   login(): Promise<void>;
   logout(): void;
-  createGroup(input: { name: string; baseCurrency: string; yourName: string }): Promise<Group>;
-  joinGroup(inviteCode: string, yourName: string): Promise<Group | null>;
+  createGroup(input: { name: string; baseCurrency: string }): Promise<Group>;
+  joinGroup(inviteCode: string): Promise<Group | null>;
   syncGroup(groupId: string): Promise<void>;
   addExpense(input: Omit<Expense, 'id'>): Promise<void>;
   deleteExpense(groupId: string, expenseId: string): Promise<void>;
@@ -101,17 +101,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     logout,
     syncGroup,
 
-    async createGroup({ name, baseCurrency, yourName }) {
-      // Better a clear message here than "userId is required" from a Lambda.
-      if (!userId) throw new Error('You need to be signed in to create a group.');
+    async createGroup({ name, baseCurrency }) {
+      if (!user) throw new Error('You need to be signed in to create a group.');
 
-      // Your member id IS your Cognito sub, so "which member am I" needs no
-      // extra bookkeeping anywhere in the app.
-      const me: Member = { id: userId, name: yourName.trim() || user?.name || 'You' };
+      // Display name comes from the account, so you're the same person in every
+      // group. Falls back to the email if the name claim is somehow empty.
+      const me: Member = { id: user.id, name: user.name || user.email || 'You' };
       const { groupId, inviteCode } = await api.createGroup(
         name.trim(),
         baseCurrency,
-        userId,
+        user.id,
         me.name,
       );
 
@@ -126,8 +125,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       return group;
     },
 
-    async joinGroup(inviteCode, yourName) {
-      if (!userId) throw new Error('You need to be signed in to join a group.');
+    async joinGroup(inviteCode) {
+      if (!user) throw new Error('You need to be signed in to join a group.');
 
       const code = inviteCode.trim().toUpperCase();
       const found = await api.getGroupByCode(code);
@@ -137,8 +136,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // it returns the group unchanged rather than adding you twice.
       const updated = await api.joinGroup(
         found.id,
-        userId,
-        yourName.trim() || user?.name || 'Member',
+        user.id,
+        user.name || user.email || 'Member',
       );
 
       setData((d) => ({
