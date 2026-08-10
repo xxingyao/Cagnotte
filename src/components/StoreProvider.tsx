@@ -3,15 +3,18 @@
 import * as api from '@/lib/api';
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { emptyData, loadData, saveData } from '@/lib/storage';
-import { getUserId } from '@/lib/identity';
+import { completeLogin, currentUser, login, logout, type User } from '@/lib/auth';
 import type { AppData, Expense, Group, Member } from '@/lib/types';
 
 interface Store {
   data: AppData;
   /** False until localStorage has been read. Render a placeholder while false. */
   ready: boolean;
-  /** This browser's id. Also the member id representing you in every group. */
+  /** Cognito's `sub`. Also the member id representing you in every group. */
   userId: string;
+  user: User | null;
+  login(): Promise<void>;
+  logout(): void;
   createGroup(input: { name: string; baseCurrency: string; yourName: string }): Promise<Group>;
   joinGroup(inviteCode: string, yourName: string): Promise<Group | null>;
   syncGroup(groupId: string): Promise<void>;
@@ -26,6 +29,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<AppData>(emptyData);
   const [ready, setReady] = useState(false);
   const [userId, setUserId] = useState('');
+  const [user, setUser] = useState<User | null>(null);
 
   // Cache first so the page paints immediately, then the server's list replaces
   // it. This is what makes the dashboard survive a cleared cache: the groups
@@ -34,18 +38,35 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // Reading localStorage during render instead would make the server-rendered
   // HTML and the client disagree — a hydration mismatch, which produces
   // confusing intermittent bugs.
-  useEffect(() => {
-    const id = getUserId();
-    setUserId(id);
-    setData(loadData());
-    setReady(true);
+    useEffect(() => {
+    let cancelled = false;
 
-    api
-      .listUserGroups(id)
-      .then((groups) => setData((d) => ({ ...d, groups })))
-      .catch(() => {
-        // Offline or server down: the cached list is still usable.
-      });
+    (async () => {
+      // Handles the ?code= redirect back from the Hosted UI, if that's why
+      // we're here. Harmless on a normal load.
+      await completeLogin();
+      if (cancelled) return;
+
+      const signedIn = currentUser();
+      setUser(signedIn);
+      setData(loadData());
+      setReady(true);
+
+      if (!signedIn) return;
+
+      api
+        .listUserGroups(signedIn.id)
+        .then((groups) => {
+          if (!cancelled) setData((d) => ({ ...d, groups }));
+        })
+        .catch(() => {
+          // Offline or server down: the cached list is still usable.
+        });
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Save on every change, but not before the initial load — that would
@@ -76,7 +97,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const store: Store = {
     data,
     ready,
-    userId,
+    userId: user?.id ?? '',
+    user,
+    login,
+    logout,
     syncGroup,
 
     async createGroup({ name, baseCurrency, yourName }) {
