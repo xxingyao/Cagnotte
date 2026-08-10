@@ -1,24 +1,51 @@
+import type { Expense, Group, Member } from './types';
+import { getIdToken, logout } from './auth';
+
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE ??
   'https://oxfhpuu8a8.execute-api.us-east-1.amazonaws.com/dev';
 
-import type { Expense, Group, Member } from './types';
+/** Carries the HTTP status so callers can treat 404 as "absent" not "broken". */
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
 
 /**
  * One place to talk to the Lambda API.
  *
- * The `ok` check alone isn't enough: a misconfigured API Gateway can hand back
- * HTTP 200 with a Lambda crash dump as the body. So every call also has to
- * confirm the field it actually needs is present, or a broken backend shows up
+ * Every request carries the Cognito id token. API Gateway verifies it against
+ * Cognito's signing keys before the Lambda runs, and the Lambda reads the user
+ * id from those verified claims — so the client never gets to assert who it is.
+ *
+ * The `ok` check alone isn't enough either: a misconfigured API Gateway can hand
+ * back HTTP 200 with a Lambda crash dump as the body. So every call also
+ * confirms the field it actually needs is present, or a broken backend shows up
  * as phantom data instead of an error.
  */
 async function request(path: string, init?: RequestInit) {
+  const token = await getIdToken();
+  if (!token) throw new ApiError('You are signed out. Sign in again to continue.', 401);
+
   let response: Response;
   try {
-    response = await fetch(`${API_BASE}${path}`, init);
+    response = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      headers: { ...(init?.headers ?? {}), Authorization: token },
+    });
   } catch {
     // Network down, DNS failure, or the browser blocked it (CORS).
     throw new Error('Could not reach the server. Check your connection.');
+  }
+
+  if (response.status === 401) {
+    // Token rejected — expired beyond refresh, revoked, or issued by a user
+    // pool that no longer exists. Nothing to do but sign in again.
+    logout();
+    throw new ApiError('Your session ended. Sign in again.', 401);
   }
 
   const text = await response.text();
@@ -30,22 +57,13 @@ async function request(path: string, init?: RequestInit) {
   }
 
   // A Lambda that failed to start reports itself in the body, not the status.
-    const asError = json as { errorMessage?: string; error?: string } | null;
+  const asError = json as { errorMessage?: string; error?: string } | null;
   const message = asError?.errorMessage ?? asError?.error;
   if (!response.ok || message) {
     throw new ApiError(message ?? `Request failed (HTTP ${response.status}).`, response.status);
   }
 
   return json;
-}
-
-/** Carries the HTTP status so callers can treat 404 as "absent" not "broken". */
-export class ApiError extends Error {
-  status: number;
-  constructor(message: string, status: number) {
-    super(message);
-    this.status = status;
-  }
 }
 
 export interface CreatedGroup {
@@ -99,6 +117,8 @@ function toExpense(wire: WireExpense): Expense {
     category: wire.category ?? 'Other',
     payerId: wire.payerId ?? '',
     date: wire.date ?? '',
+    // Rows written before splitting existed read as "paid for themselves",
+    // which nets to zero rather than inventing debt nobody agreed to.
     splitBetween: wire.splitBetween ?? [wire.payerId],
   };
 }
@@ -106,13 +126,12 @@ function toExpense(wire: WireExpense): Expense {
 export async function createGroup(
   name: string,
   baseCurrency: string,
-  userId: string,
   yourName: string,
 ): Promise<CreatedGroup> {
   const json = (await request('/groups', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, baseCurrency, userId, yourName }),
+    body: JSON.stringify({ name, baseCurrency, yourName }),
   })) as Partial<CreatedGroup>;
 
   if (!json?.groupId || !json?.inviteCode) {
@@ -153,14 +172,6 @@ export async function getExpenses(groupId: string): Promise<Expense[]> {
   return (json as WireExpense[]).map(toExpense);
 }
 
-export async function getBalances(groupId: string): Promise<Record<string, number>> {
-  const json = await request(`/groups/${encodeURIComponent(groupId)}/balances`);
-  if (!json || typeof json !== 'object' || Array.isArray(json)) {
-    throw new Error('Server did not return balances.');
-  }
-  return json as Record<string, number>;
-}
-
 export async function getGroup(groupId: string): Promise<Group> {
   const json = await request(`/groups/${encodeURIComponent(groupId)}`);
   return toGroup(json as WireGroup);
@@ -177,21 +188,19 @@ export async function getGroupByCode(inviteCode: string): Promise<Group | null> 
   }
 }
 
-export async function joinGroup(
-  groupId: string,
-  userId: string,
-  name: string,
-): Promise<Group> {
+export async function joinGroup(groupId: string, name: string): Promise<Group> {
   const json = await request(`/groups/${encodeURIComponent(groupId)}/members`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId, name }),
+    body: JSON.stringify({ name }),
   });
   return toGroup(json as WireGroup);
 }
 
-export async function listUserGroups(userId: string): Promise<Group[]> {
-  const json = await request(`/users/${encodeURIComponent(userId)}/groups`);
+export async function listUserGroups(): Promise<Group[]> {
+  // No user id in the path — the server takes it from the token, so there's no
+  // way to ask for someone else's groups.
+  const json = await request('/me/groups');
   if (!Array.isArray(json)) {
     throw new Error('Server did not return a group list.');
   }
