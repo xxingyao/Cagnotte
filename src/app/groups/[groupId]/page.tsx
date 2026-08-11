@@ -114,7 +114,11 @@ export default function GroupPage() {
           limitMinor={budget?.limitMinor ?? null}
           percent={percent}
           currency={group.baseCurrency}
-          onSave={(limitMinor) => setBudget(group.id, month, limitMinor)}
+          onSave={(limitMinor) =>
+            setBudget(group.id, month, limitMinor).catch((error: Error) =>
+              setSyncError(error.message),
+            )
+          }
         />
 
         <AddExpenseCard
