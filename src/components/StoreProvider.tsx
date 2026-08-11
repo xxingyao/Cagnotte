@@ -83,14 +83,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   // version would be a new function each time and any useEffect depending on it
   // would re-run forever.
   const syncGroup = useCallback(async (groupId: string) => {
-    const [group, expenses] = await Promise.all([
+    const [group, expenses, budgets] = await Promise.all([
       api.getGroup(groupId),
       api.getExpenses(groupId),
+      api.getBudgets(groupId),
     ]);
     setData((d) => ({
       ...d,
       groups: d.groups.map((g) => (g.id === groupId ? group : g)),
       expenses: [...d.expenses.filter((e) => e.groupId !== groupId), ...expenses],
+      budgets: [...d.budgets.filter((b) => b.groupId !== groupId), ...budgets],
     }));
   }, []);
 
@@ -170,6 +172,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     },
 
     async setBudget(groupId, month, limitMinor) {
+      // Server first: updating local state before the call succeeds would make
+      // a failed save look like it worked until the next sync overwrote it.
+      await api.setBudget(groupId, month, limitMinor);
       setData((d) => ({
         ...d,
         budgets: [

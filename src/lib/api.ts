@@ -1,4 +1,4 @@
-import type { Expense, Group, Member } from './types';
+import type { Budget, Expense, Group, Member } from './types';
 import { getIdToken, logout } from './auth';
 
 const API_BASE =
@@ -212,4 +212,28 @@ export async function deleteExpense(groupId: string, expenseId: string): Promise
     `/groups/${encodeURIComponent(groupId)}/expenses/${encodeURIComponent(expenseId)}`,
     { method: 'DELETE' },
   );
+}
+
+export async function getBudgets(groupId: string): Promise<Budget[]> {
+  const json = await request(`/groups/${encodeURIComponent(groupId)}/budgets`);
+  if (!Array.isArray(json)) {
+    throw new Error('Server did not return a budget list.');
+  }
+  return (json as { groupId: string; month: string; limitMinor: number }[]).map((b) => ({
+    groupId: b.groupId,
+    month: b.month,
+    limitMinor: b.limitMinor ?? 0,
+  }));
+}
+
+export async function setBudget(
+  groupId: string,
+  month: string,
+  limitMinor: number,
+): Promise<void> {
+  await request(`/groups/${encodeURIComponent(groupId)}/budgets`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ month, limitMinor }),
+  });
 }
