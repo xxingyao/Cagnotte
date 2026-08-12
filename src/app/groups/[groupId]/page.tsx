@@ -6,9 +6,8 @@ import { useParams } from 'next/navigation';
 import { useStore } from '@/components/StoreProvider';
 import { CATEGORIES, CATEGORY_EMOJI, CURRENCIES } from '@/lib/options';
 import { formatMoney, parseAmountToMinor } from '@/lib/money';
-import { computeBalances, computeSettlements, type Balance, type Settlement } from '@/lib/balances';
+import { baseCurrencyAmount, computeBalances, computeSettlements, type Balance, type Settlement } from '@/lib/balances';
 import type { Member } from '@/lib/types';
-
 export default function GroupPage() {
   const params = useParams<{ groupId: string }>();
   const { data, ready, userId, addExpense, deleteExpense, setBudget, syncGroup } = useStore();
@@ -79,11 +78,11 @@ export default function GroupPage() {
   // Only same-currency expenses count toward the budget for now; converting
   // the others needs exchange rates, which is a later step.
   const spent = groupExpenses
-    .filter((e) => e.date.startsWith(month) && e.currency === group.baseCurrency)
-    .reduce((sum, e) => sum + e.amountMinor, 0);
+    .filter((e) => e.date.startsWith(month))
+    .reduce((sum, e) => sum + (baseCurrencyAmount(e, group.baseCurrency) ?? 0), 0);
 
-  const otherCurrencyCount = groupExpenses.filter(
-    (e) => e.currency !== group.baseCurrency,
+  const excludedCount = groupExpenses.filter(
+    (e) => baseCurrencyAmount(e, group.baseCurrency) === null,
   ).length;
 
   const budget = data.budgets.find((b) => b.groupId === group.id && b.month === month);
@@ -140,7 +139,7 @@ export default function GroupPage() {
         <BalancesCard
           balances={balances}
           currency={group.baseCurrency}
-          excludedCount={otherCurrencyCount}
+          excludedCount={excludedCount}
           youId={userId}
         />
 
@@ -188,6 +187,11 @@ export default function GroupPage() {
                         <div className="amount">
                           {formatMoney(expense.amountMinor, expense.currency)}
                         </div>
+                        {expense.currency !== group.baseCurrency && expense.baseAmountMinor !== null && (
+                          <div className="row-sub">
+                            ≈ {formatMoney(expense.baseAmountMinor, group.baseCurrency)}
+                          </div>
+                        )}
                       </div>
                       <button
                         type="button"
@@ -276,8 +280,8 @@ function BalancesCard({
 
       {excludedCount > 0 && (
         <p className="split-hint" style={{ marginBottom: 0 }}>
-          {excludedCount} expense{excludedCount === 1 ? '' : 's'} not in {currency}{' '}
-          {excludedCount === 1 ? 'is' : 'are'} left out — converting needs exchange rates.
+          {excludedCount} expense{excludedCount === 1 ? '' : 's'} couldn&apos;t be converted to{' '}
+          {currency} and {excludedCount === 1 ? 'is' : 'are'} left out of the totals.
         </p>
       )}
     </section>

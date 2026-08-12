@@ -18,7 +18,9 @@ interface Store {
   createGroup(input: { name: string; baseCurrency: string }): Promise<Group>;
   joinGroup(inviteCode: string): Promise<Group | null>;
   syncGroup(groupId: string): Promise<void>;
-  addExpense(input: Omit<Expense, 'id'>): Promise<void>;
+  // baseAmountMinor/rate come from a currency conversion the Lambda performs
+  // — the client can't supply them, same reason it can't supply an id.
+  addExpense(input: Omit<Expense, 'id' | 'baseAmountMinor' | 'rate'>): Promise<void>;  
   deleteExpense(groupId: string, expenseId: string): Promise<void>;
   setBudget(groupId: string, month: string, limitMinor: number): Promise<void>;
 }
@@ -146,8 +148,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     },
 
     async addExpense(input) {
-      // Take the server's id rather than minting our own, so the local row and
-      // the DynamoDB row are the same record once a sync overwrites it.
       const { expenseId } = await api.addExpense(
         input.groupId,
         input.description,
@@ -158,7 +158,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         input.date,
         input.splitBetween,
       );
-      setData((d) => ({ ...d, expenses: [...d.expenses, { ...input, id: expenseId }] }));
+      setData((d) => ({
+        ...d,
+        expenses: [
+          ...d.expenses,
+          // Placeholder until the next sync brings back the server's real
+          // converted amount. The group page already calls syncGroup right
+          // after this resolves, so this is only visible for an instant.
+          { ...input, id: expenseId, baseAmountMinor: null, rate: null },
+        ],
+      }));
     },
 
     async deleteExpense(groupId, expenseId) {
