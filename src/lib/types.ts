@@ -26,6 +26,12 @@ export interface Expense {
   splitBetween: string[];
   /** YYYY-MM-DD */
   date: string;
+  /** Converted to the group's base currency, frozen at the moment this was
+   *  logged. Null if the currency already matched, or the rate lookup failed
+   *  and this expense isn't counted toward totals yet. */
+  baseAmountMinor: number | null;
+  /** The rate used for that conversion. Null alongside baseAmountMinor. */
+  rate: number | null;
 }
 
 export interface Budget {

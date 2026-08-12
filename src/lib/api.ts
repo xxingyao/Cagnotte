@@ -87,6 +87,8 @@ interface WireExpense {
   date: string;
   createdAt: number;
   splitBetween?: string[];
+  baseAmountMinor?: number | null;
+  rate?: number | null;
 }
 
 interface WireGroup {
@@ -120,6 +122,8 @@ function toExpense(wire: WireExpense): Expense {
     // Rows written before splitting existed read as "paid for themselves",
     // which nets to zero rather than inventing debt nobody agreed to.
     splitBetween: wire.splitBetween ?? [wire.payerId],
+    baseAmountMinor: wire.baseAmountMinor ?? null,
+    rate: wire.rate ?? null,
   };
 }
 

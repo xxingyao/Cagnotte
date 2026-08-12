@@ -1,6 +1,17 @@
 import type { Expense, Member } from './types';
 
 /**
+ * How much an expense counts toward the group's base currency, or null if it
+ * can't be counted — a different currency with no stored conversion, whether
+ * that's an old expense from before this feature or a rate lookup that failed
+ * at the moment it was logged.
+ */
+
+export function baseCurrencyAmount(expense: Expense, baseCurrency: string): number | null {
+  if (expense.currency === baseCurrency) return expense.amountMinor;
+  return expense.baseAmountMinor ?? null;
+}
+/**
  * Splits an amount into `count` whole minor units that sum back to exactly the
  * original.
  *
@@ -48,18 +59,17 @@ export function computeBalances(
   }
 
   for (const expense of expenses) {
-    if (expense.currency !== currency) continue;
+    const baseAmount = baseCurrencyAmount(expense, currency);
+    if (baseAmount === null) continue;
 
-    // Skip the whole expense if the payer is no longer a member. Counting the
-    // shares without the payment would leave the nets not summing to zero.
     if (!paid.has(expense.payerId)) continue;
 
     const sharers = expense.splitBetween.filter((id) => owed.has(id));
     if (sharers.length === 0) continue;
 
-    paid.set(expense.payerId, paid.get(expense.payerId)! + expense.amountMinor);
+    paid.set(expense.payerId, paid.get(expense.payerId)! + baseAmount);
 
-    const shares = splitEvenly(expense.amountMinor, sharers.length);
+    const shares = splitEvenly(baseAmount, sharers.length);
     sharers.forEach((id, i) => owed.set(id, owed.get(id)! + shares[i]));
   }
 
