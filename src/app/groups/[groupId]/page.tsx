@@ -2,8 +2,10 @@
 
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useStore } from '@/components/StoreProvider';
+import { Modal } from '@/components/Modal';
+import { ConfirmModal } from '@/components/ConfirmModal';
 import { CATEGORIES, CATEGORY_EMOJI, CURRENCIES } from '@/lib/options';
 import { formatMoney, minorToAmountString, parseAmountToMinor } from '@/lib/money';
 import { baseCurrencyAmount, computeBalances, computeSettlements, type Balance, type Settlement } from '@/lib/balances';
@@ -11,9 +13,15 @@ import type { Expense, Member } from '@/lib/types';
 
 export default function GroupPage() {
   const params = useParams<{ groupId: string }>();
-  const { data, ready, userId, addExpense, editExpense, deleteExpense, setBudget, syncGroup } = useStore();
+  const router = useRouter();
+  const {
+    data, ready, userId, addExpense, editExpense, deleteExpense, deleteGroup, setBudget, syncGroup,
+  } = useStore();
   const [syncError, setSyncError] = useState<string | null>(null);
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
+  const [confirmDeleteExpenseId, setConfirmDeleteExpenseId] = useState<string | null>(null);
+  const [confirmDeleteGroup, setConfirmDeleteGroup] = useState(false);
+  const [deletingGroup, setDeletingGroup] = useState(false);
 
   const groupId = params.groupId;
 
@@ -57,6 +65,7 @@ export default function GroupPage() {
   );
 
   const editingExpense = groupExpenses.find((e) => e.id === editingExpenseId) ?? null;
+  const expenseToDelete = groupExpenses.find((e) => e.id === confirmDeleteExpenseId) ?? null;
 
   // Memoised because this walks every expense in the group, on every render.
   const balances = useMemo(
@@ -226,15 +235,7 @@ export default function GroupPage() {
                         type="button"
                         aria-label={`Delete ${expense.description}`}
                         title="Delete"
-                        onClick={() => {
-                          // Nothing here is recoverable — no undo, no trash.
-                          // A confirm is the cheapest thing standing between a
-                          // misplaced tap and a lost record.
-                          if (!window.confirm(`Delete "${expense.description}"?`)) return;
-                          deleteExpense(group.id, expense.id).catch((error: Error) =>
-                            setSyncError(error.message),
-                          );
-                        }}
+                        onClick={() => setConfirmDeleteExpenseId(expense.id)}
                         style={{
                           background: 'none', border: 0, cursor: 'pointer',
                           color: 'var(--ink-muted)', fontSize: 18, lineHeight: 1,
@@ -250,7 +251,55 @@ export default function GroupPage() {
             </ul>
           )}
         </section>
+
+        <div style={{ textAlign: 'center', marginTop: 8 }}>
+          <button
+            type="button"
+            className="sub"
+            onClick={() => setConfirmDeleteGroup(true)}
+            style={{ background: 'none', border: 0, cursor: 'pointer', color: 'var(--negative)' }}
+          >
+            Delete this group
+          </button>
+        </div>
       </div>
+
+      <ConfirmModal
+        open={expenseToDelete !== null}
+        title="Delete expense"
+        message={
+          expenseToDelete
+            ? `Delete "${expenseToDelete.description}"? This can't be undone.`
+            : ''
+        }
+        onConfirm={() => {
+          if (!expenseToDelete) return;
+          deleteExpense(group.id, expenseToDelete.id).catch((error: Error) =>
+            setSyncError(error.message),
+          );
+          setConfirmDeleteExpenseId(null);
+        }}
+        onCancel={() => setConfirmDeleteExpenseId(null)}
+      />
+
+      <ConfirmModal
+        open={confirmDeleteGroup}
+        title="Delete group"
+        message={`Delete "${group.name}" for everyone? All expenses and budgets in it are gone permanently — this can't be undone.`}
+        confirmLabel={deletingGroup ? 'Deleting…' : 'Delete group'}
+        onConfirm={async () => {
+          setDeletingGroup(true);
+          try {
+            await deleteGroup(group.id);
+            router.push('/');
+          } catch (error) {
+            setSyncError((error as Error).message);
+            setDeletingGroup(false);
+            setConfirmDeleteGroup(false);
+          }
+        }}
+        onCancel={() => setConfirmDeleteGroup(false)}
+      />
     </main>
   );
 }
@@ -576,8 +625,7 @@ function AddExpenseCard({
         <span className="field-label">Split between</span>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 4 }}>
           {members.map((m) => (
-            <label key={m.id}
-                   style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14 }}>
+            <label key={m.id} className="checkbox-row">
               <input type="checkbox" checked={splitBetween.includes(m.id)}
                      onChange={() => toggleSharer(m.id)} />
               {m.id === youId ? `${m.name} (you)` : m.name}

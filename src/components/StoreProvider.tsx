@@ -23,6 +23,7 @@ interface Store {
   addExpense(input: Omit<Expense, 'id' | 'baseAmountMinor' | 'rate'>): Promise<void>;  
   deleteExpense(groupId: string, expenseId: string): Promise<void>;
   editExpense(groupId: string, expenseId: string, input: Omit<Expense, 'id' | 'groupId' | 'baseAmountMinor' | 'rate'>,): Promise<void>;
+  deleteGroup(groupId: string): Promise<void>;
   setBudget(groupId: string, month: string, limitMinor: number): Promise<void>;
 }
 
@@ -194,6 +195,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         expenses: d.expenses.map((e) =>
           e.id === expenseId ? { ...e, ...input, baseAmountMinor: null, rate: null } : e,
         ),
+      }));
+    },
+
+    async deleteGroup(groupId) {
+      await api.deleteGroup(groupId);
+      setData((d) => ({
+        ...d,
+        groups: d.groups.filter((g) => g.id !== groupId),
+        expenses: d.expenses.filter((e) => e.groupId !== groupId),
+        budgets: d.budgets.filter((b) => b.groupId !== groupId),
       }));
     },
 
