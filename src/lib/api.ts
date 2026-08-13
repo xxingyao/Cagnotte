@@ -266,3 +266,12 @@ export async function editExpense(
 export async function deleteGroup(groupId: string): Promise<void> {
   await request(`/groups/${encodeURIComponent(groupId)}`, { method: 'DELETE' });
 }
+
+export async function editGroupName(groupId: string, name: string): Promise<Group> {
+  const json = await request(`/groups/${encodeURIComponent(groupId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  return toGroup(json as WireGroup);
+}

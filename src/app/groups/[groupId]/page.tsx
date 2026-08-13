@@ -15,13 +15,15 @@ export default function GroupPage() {
   const params = useParams<{ groupId: string }>();
   const router = useRouter();
   const {
-    data, ready, userId, addExpense, editExpense, deleteExpense, deleteGroup, setBudget, syncGroup,
+    data, ready, userId, addExpense, editExpense, deleteExpense, deleteGroup, editGroupName,
+    setBudget, syncGroup,
   } = useStore();
   const [syncError, setSyncError] = useState<string | null>(null);
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
   const [confirmDeleteExpenseId, setConfirmDeleteExpenseId] = useState<string | null>(null);
   const [confirmDeleteGroup, setConfirmDeleteGroup] = useState(false);
   const [deletingGroup, setDeletingGroup] = useState(false);
+  const [editingGroupName, setEditingGroupName] = useState(false);
 
   const groupId = params.groupId;
 
@@ -109,7 +111,21 @@ export default function GroupPage() {
   return (
     <main>
       <Link href="/" className="backlink">← All groups</Link>
-      <h1 className="page-title">{group.name}</h1>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+        <h1 className="page-title" style={{ margin: 0 }}>{group.name}</h1>
+        <button
+          type="button"
+          aria-label="Rename group"
+          title="Rename group"
+          onClick={() => setEditingGroupName(true)}
+          style={{
+            background: 'none', border: 0, cursor: 'pointer',
+            color: 'var(--ink-muted)', fontSize: 15, lineHeight: 1,
+          }}
+        >
+          ✎
+        </button>
+      </div>
       <p className="page-sub">
         {group.members.length} members · shown in {group.baseCurrency} ·{' '}
         <span className="chip chip-code">{group.inviteCode}</span>
@@ -300,7 +316,23 @@ export default function GroupPage() {
         }}
         onCancel={() => setConfirmDeleteGroup(false)}
       />
+
+      <EditGroupNameModal
+        open={editingGroupName}
+        currentName={group.name}
+        onSave={async (name) => {
+          try {
+            await editGroupName(group.id, name);
+            setEditingGroupName(false);
+          } catch (error) {
+            setSyncError((error as Error).message);
+            setEditingGroupName(false);
+          }
+        }}
+        onClose={() => setEditingGroupName(false)}
+      />
     </main>
+    
   );
 }
 
@@ -463,6 +495,62 @@ function BudgetCard({
       )}
       {error && <p className="split-hint" style={{ color: 'var(--negative)' }}>{error}</p>}
     </section>
+  );
+}
+
+function EditGroupNameModal({
+  open, currentName, onSave, onClose,
+}: {
+  open: boolean;
+  currentName: string;
+  onSave: (name: string) => void;
+  onClose: () => void;
+}) {
+  const [draft, setDraft] = useState(currentName);
+  const [error, setError] = useState<string | null>(null);
+
+  // Re-sync whenever the modal opens — otherwise reopening it after a cancel
+  // would show whatever was left over from last time instead of the real name.
+  useEffect(() => {
+    if (open) {
+      setDraft(currentName);
+      setError(null);
+    }
+  }, [open, currentName]);
+
+  function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!draft.trim()) {
+      setError("Group name can't be empty.");
+      return;
+    }
+    onSave(draft.trim());
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Rename group">
+      <form onSubmit={submit}>
+        <label className="field">
+          <span className="field-label">Group name</span>
+          <input
+            className="input"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            autoFocus
+            required
+          />
+        </label>
+        {error && <p className="split-hint" style={{ color: 'var(--negative)' }}>{error}</p>}
+        <div className="modal-actions">
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" className="btn">
+            Save
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
