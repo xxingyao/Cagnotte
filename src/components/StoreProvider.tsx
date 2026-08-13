@@ -24,6 +24,7 @@ interface Store {
   deleteExpense(groupId: string, expenseId: string): Promise<void>;
   editExpense(groupId: string, expenseId: string, input: Omit<Expense, 'id' | 'groupId' | 'baseAmountMinor' | 'rate'>,): Promise<void>;
   deleteGroup(groupId: string): Promise<void>;
+  editGroupName(groupId: string, name: string): Promise<void>;
   setBudget(groupId: string, month: string, limitMinor: number): Promise<void>;
 }
 
@@ -205,6 +206,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         groups: d.groups.filter((g) => g.id !== groupId),
         expenses: d.expenses.filter((e) => e.groupId !== groupId),
         budgets: d.budgets.filter((b) => b.groupId !== groupId),
+      }));
+    },
+    async editGroupName(groupId, name) {
+      const updated = await api.editGroupName(groupId, name);
+      setData((d) => ({
+        ...d,
+        groups: d.groups.map((g) => (g.id === groupId ? updated : g)),
       }));
     },
 
