@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Avatars } from '@/components/Avatars';
 import { useStore } from '@/components/StoreProvider';
 import { CURRENCIES } from '@/lib/options';
+import Image from 'next/image';
 
 export default function DashboardPage() {
   const { data, ready, user, login, logout, createGroup, joinGroup } = useStore();
@@ -14,13 +15,19 @@ export default function DashboardPage() {
   if (!user) {
     return (
       <main>
-        <h1 className="page-title">Cagnotte</h1>
-        <p className="page-sub">
-          Shared budgets and expense splitting. Sign in to see your groups on any device.
-        </p>
-        <button type="button" className="btn" onClick={() => login()}>
-          Sign in or create an account
-        </button>
+        <div className="signin-hero">
+          <div className="signin-mark" aria-hidden="true">
+            <Image src="/logo.png" alt="" width={56} height={56} />
+          </div>
+          <h1 className="page-title" style={{ textAlign: 'center' }}>Cagnotte</h1>
+          <p className="page-sub" style={{ textAlign: 'center' }}>
+            Shared budgets and expense splitting for people abroad together. Sign in to see
+            your groups on any device.
+          </p>
+          <button type="button" className="btn" onClick={() => login()}>
+            Sign in or create an account
+          </button>
+        </div>
       </main>
     );
   }
