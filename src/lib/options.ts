@@ -1,4 +1,4 @@
-export const CURRENCIES = ['EUR', 'GBP', 'USD', 'SGD', 'JPY', 'AUD', 'CHF', 'BRL'];
+export const CURRENCIES = ['SGD', 'USD', 'EUR', 'GBP', 'JPY', 'AUD', 'CHF', 'BRL'];
 
 export const CATEGORIES = [
   'Food', 'Groceries', 'Rent', 'Transport',

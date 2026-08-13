@@ -578,15 +578,14 @@ function AddExpenseCard({
       <label className="field">
         <span className="field-label">What was it for?</span>
         <input className="input" value={description} required
-               onChange={(e) => setDescription(e.target.value)}
-               placeholder="Dinner at the market" />
+               onChange={(e) => setDescription(e.target.value)} />
       </label>
 
       <div className="grid-2">
         <label className="field">
           <span className="field-label">Amount</span>
           <input className="input" value={amount} inputMode="decimal" required
-                 onChange={(e) => setAmount(e.target.value)} placeholder="45.00" />
+                 onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
         </label>
         <label className="field">
           <span className="field-label">Currency</span>
@@ -608,7 +607,7 @@ function AddExpenseCard({
                   onChange={(e) => setPayerId(e.target.value)}>
             {members.map((m) => (
               <option key={m.id} value={m.id}>
-                {m.id === youId ? `${m.name} (you)` : m.name}
+                {m.id === youId ? 'You' : m.name}
               </option>
             ))}
           </select>
@@ -623,14 +622,22 @@ function AddExpenseCard({
 
       <div className="field">
         <span className="field-label">Split between</span>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 4 }}>
-          {members.map((m) => (
-            <label key={m.id} className="checkbox-row">
-              <input type="checkbox" checked={splitBetween.includes(m.id)}
-                     onChange={() => toggleSharer(m.id)} />
-              {m.id === youId ? `${m.name} (you)` : m.name}
-            </label>
-          ))}
+        <div className="split-picker">
+          {members.map((m) => {
+            const selected = splitBetween.includes(m.id);
+            return (
+              <button
+                key={m.id}
+                type="button"
+                className={`split-pill${selected ? ' is-selected' : ''}`}
+                onClick={() => toggleSharer(m.id)}
+                aria-pressed={selected}
+              >
+                <span className="split-pill-dot" aria-hidden="true" />
+                {m.id === youId ? 'You' : m.name}
+              </button>
+            );
+          })}
         </div>
       </div>
 

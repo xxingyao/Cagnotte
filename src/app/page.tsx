@@ -8,7 +8,7 @@ import { CURRENCIES } from '@/lib/options';
 import Image from 'next/image';
 
 export default function DashboardPage() {
-  const { data, ready, user, login, logout, createGroup, joinGroup } = useStore();
+  const { data, ready, user, login, createGroup, joinGroup } = useStore();
 
   if (!ready) return <p className="sub">Loading…</p>;
 
@@ -35,17 +35,7 @@ export default function DashboardPage() {
   return (
     <main>
       <h1 className="page-title">Your groups</h1>
-      <p className="page-sub">
-        {user.name || user.email} ·{' '}
-        <button
-          type="button"
-          className="sub"
-          onClick={logout}
-          style={{ background: 'none', border: 0, cursor: 'pointer', textDecoration: 'underline' }}
-        >
-          sign out
-        </button>
-      </p>
+      <p className="page-sub">{user.name || user.email}</p>
 
       {data.groups.length === 0 ? (
         <p className="sub">No groups yet — start one below.</p>
@@ -79,7 +69,7 @@ export default function DashboardPage() {
 
 function CreateGroupCard({ onCreate }: { onCreate: ReturnType<typeof useStore>['createGroup'] }) {
   const [name, setName] = useState('');
-  const [baseCurrency, setBaseCurrency] = useState('EUR');
+  const [baseCurrency, setBaseCurrency] = useState('SGD');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
