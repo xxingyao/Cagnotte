@@ -241,3 +241,24 @@ export async function setBudget(
     body: JSON.stringify({ month, limitMinor }),
   });
 }
+
+export async function editExpense(
+  groupId: string,
+  expenseId: string,
+  description: string,
+  payerId: string,
+  amount: number,
+  currency: string,
+  category: string,
+  date: string,
+  splitBetween: string[],
+): Promise<void> {
+  await request(
+    `/groups/${encodeURIComponent(groupId)}/expenses/${encodeURIComponent(expenseId)}`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description, payerId, amount, currency, category, date, splitBetween }),
+    },
+  );
+}

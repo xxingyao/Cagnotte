@@ -5,13 +5,15 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useStore } from '@/components/StoreProvider';
 import { CATEGORIES, CATEGORY_EMOJI, CURRENCIES } from '@/lib/options';
-import { formatMoney, parseAmountToMinor } from '@/lib/money';
+import { formatMoney, minorToAmountString, parseAmountToMinor } from '@/lib/money';
 import { baseCurrencyAmount, computeBalances, computeSettlements, type Balance, type Settlement } from '@/lib/balances';
-import type { Member } from '@/lib/types';
+import type { Expense, Member } from '@/lib/types';
+
 export default function GroupPage() {
   const params = useParams<{ groupId: string }>();
-  const { data, ready, userId, addExpense, deleteExpense, setBudget, syncGroup } = useStore();
+  const { data, ready, userId, addExpense, editExpense, deleteExpense, setBudget, syncGroup } = useStore();
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
 
   const groupId = params.groupId;
 
@@ -54,6 +56,8 @@ export default function GroupPage() {
     [data.expenses, groupId],
   );
 
+  const editingExpense = groupExpenses.find((e) => e.id === editingExpenseId) ?? null;
+
   // Memoised because this walks every expense in the group, on every render.
   const balances = useMemo(
     () => (group ? computeBalances(groupExpenses, group.members, group.baseCurrency) : []),
@@ -75,8 +79,9 @@ export default function GroupPage() {
 
   const month = new Date().toISOString().slice(0, 7);
 
-  // Only same-currency expenses count toward the budget for now; converting
-  // the others needs exchange rates, which is a later step.
+  // Anything that couldn't be converted (a rate lookup that failed, or an old
+  // expense from before this feature) is silently excluded here — the
+  // excludedCount banner below is what surfaces that to the user.
   const spent = groupExpenses
     .filter((e) => e.date.startsWith(month))
     .reduce((sum, e) => sum + (baseCurrencyAmount(e, group.baseCurrency) ?? 0), 0);
@@ -124,6 +129,7 @@ export default function GroupPage() {
           members={group.members}
           baseCurrency={group.baseCurrency}
           youId={userId}
+          editing={editingExpense}
           onAdd={async (expense) => {
             try {
               await addExpense({ ...expense, groupId: group.id });
@@ -134,6 +140,16 @@ export default function GroupPage() {
               setSyncError((error as Error).message);
             }
           }}
+          onEdit={async (expenseId, expense) => {
+            try {
+              await editExpense(group.id, expenseId, expense);
+              await syncGroup(group.id);
+              setEditingExpenseId(null);
+            } catch (error) {
+              setSyncError((error as Error).message);
+            }
+          }}
+          onCancelEdit={() => setEditingExpenseId(null)}
         />
 
         <BalancesCard
@@ -195,6 +211,19 @@ export default function GroupPage() {
                       </div>
                       <button
                         type="button"
+                        aria-label={`Edit ${expense.description}`}
+                        title="Edit"
+                        onClick={() => setEditingExpenseId(expense.id)}
+                        style={{
+                          background: 'none', border: 0, cursor: 'pointer',
+                          color: 'var(--ink-muted)', fontSize: 15, lineHeight: 1,
+                          padding: '0 0 0 10px',
+                        }}
+                      >
+                        ✎
+                      </button>
+                      <button
+                        type="button"
                         aria-label={`Delete ${expense.description}`}
                         title="Delete"
                         onClick={() => {
@@ -207,13 +236,9 @@ export default function GroupPage() {
                           );
                         }}
                         style={{
-                          background: 'none',
-                          border: 0,
-                          cursor: 'pointer',
-                          color: 'var(--ink-muted)',
-                          fontSize: 18,
-                          lineHeight: 1,
-                          padding: '0 0 0 10px',
+                          background: 'none', border: 0, cursor: 'pointer',
+                          color: 'var(--ink-muted)', fontSize: 18, lineHeight: 1,
+                          padding: '0 0 0 6px',
                         }}
                       >
                         ×
@@ -392,16 +417,21 @@ function BudgetCard({
   );
 }
 
+interface ExpenseFields {
+  description: string; amountMinor: number; currency: string;
+  category: string; payerId: string; date: string; splitBetween: string[];
+}
+
 function AddExpenseCard({
-  members, baseCurrency, youId, onAdd,
+  members, baseCurrency, youId, editing, onAdd, onEdit, onCancelEdit,
 }: {
   members: Member[];
   baseCurrency: string;
   youId: string;
-  onAdd: (e: {
-    description: string; amountMinor: number; currency: string;
-    category: string; payerId: string; date: string; splitBetween: string[];
-  }) => void;
+  editing: Expense | null;
+  onAdd: (e: ExpenseFields) => void;
+  onEdit: (expenseId: string, e: ExpenseFields) => void;
+  onCancelEdit: () => void;
 }) {
   const today = new Date().toISOString().slice(0, 10);
 
@@ -409,8 +439,6 @@ function AddExpenseCard({
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState(baseCurrency);
   const [category, setCategory] = useState('Food');
-  // Default to you, not to members[0] — on a device that *joined*, members[0]
-  // is whoever created the group, and every expense would be misattributed.
   const [payerId, setPayerId] = useState(
     members.some((m) => m.id === youId) ? youId : members[0]?.id ?? '',
   );
@@ -418,18 +446,32 @@ function AddExpenseCard({
   const [splitBetween, setSplitBetween] = useState<string[]>(members.map((m) => m.id));
   const [error, setError] = useState<string | null>(null);
 
-  // Someone joining mid-session should land in the split by default. Keyed on
-  // the joined ids rather than the array itself — every sync hands back a new
-  // array object, which would otherwise wipe the user's selection mid-edit.
+  // One effect drives both "start/stop editing" and "a member joined mid-
+  // session". Keyed on editing.id (not the object) since every sync hands
+  // back a new Expense object even when nothing changed — using the object
+  // itself would re-run this every render and wipe whatever you're typing.
   const memberKey = members.map((m) => m.id).join(',');
   useEffect(() => {
-    setSplitBetween(members.map((m) => m.id));
-    setPayerId((current) => {
-      if (members.some((m) => m.id === current)) return current;
-      return members.some((m) => m.id === youId) ? youId : members[0]?.id ?? '';
-    });
+    if (editing) {
+      setDescription(editing.description);
+      setAmount(minorToAmountString(editing.amountMinor, editing.currency));
+      setCurrency(editing.currency);
+      setCategory(editing.category);
+      setPayerId(editing.payerId);
+      setDate(editing.date);
+      setSplitBetween(editing.splitBetween);
+    } else {
+      setDescription('');
+      setAmount('');
+      setCurrency(baseCurrency);
+      setCategory('Food');
+      setPayerId(members.some((m) => m.id === youId) ? youId : members[0]?.id ?? '');
+      setDate(today);
+      setSplitBetween(members.map((m) => m.id));
+    }
+    setError(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [memberKey, youId]);
+  }, [editing?.id, memberKey, youId]);
 
   function toggleSharer(id: string) {
     setSplitBetween((current) =>
@@ -448,12 +490,17 @@ function AddExpenseCard({
       setError('Pick at least one person to split this between.');
       return;
     }
-    onAdd({
+    const fields = {
       description: description.trim(), amountMinor, currency,
       category, payerId, date, splitBetween,
-    });
-    setDescription('');
-    setAmount('');
+    };
+    if (editing) {
+      onEdit(editing.id, fields);
+    } else {
+      onAdd(fields);
+      setDescription('');
+      setAmount('');
+    }
     setError(null);
   }
 
@@ -465,7 +512,19 @@ function AddExpenseCard({
 
   return (
     <form className="card" onSubmit={submit}>
-      <div className="card-head"><h2 className="card-title">Add an expense</h2></div>
+      <div className="card-head">
+        <h2 className="card-title">{editing ? 'Edit expense' : 'Add an expense'}</h2>
+        {editing && (
+          <button
+            type="button"
+            className="sub"
+            onClick={onCancelEdit}
+            style={{ background: 'none', border: 0, cursor: 'pointer' }}
+          >
+            Cancel
+          </button>
+        )}
+      </div>
 
       <label className="field">
         <span className="field-label">What was it for?</span>
@@ -534,7 +593,7 @@ function AddExpenseCard({
       )}
 
       {error && <p className="split-hint" style={{ color: 'var(--negative)' }}>{error}</p>}
-      <button type="submit" className="btn">Add expense</button>
+      <button type="submit" className="btn">{editing ? 'Save changes' : 'Add expense'}</button>
     </form>
   );
 }

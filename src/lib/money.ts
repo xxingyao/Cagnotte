@@ -29,3 +29,9 @@ export function formatMoney(minor: number, currency: string): string {
     return `${(minor / 10 ** decimals).toFixed(decimals)} ${currency}`;
   }
 }
+
+/** Inverse of parseAmountToMinor — turns 4550/"EUR" back into "45.50" for an editable field. */
+export function minorToAmountString(minor: number, currency: string): string {
+  const decimals = decimalsFor(currency);
+  return (minor / 10 ** decimals).toFixed(decimals);
+}
