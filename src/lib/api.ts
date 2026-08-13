@@ -262,3 +262,7 @@ export async function editExpense(
     },
   );
 }
+
+export async function deleteGroup(groupId: string): Promise<void> {
+  await request(`/groups/${encodeURIComponent(groupId)}`, { method: 'DELETE' });
+}
