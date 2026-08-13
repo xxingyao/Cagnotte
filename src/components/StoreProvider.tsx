@@ -22,6 +22,7 @@ interface Store {
   // — the client can't supply them, same reason it can't supply an id.
   addExpense(input: Omit<Expense, 'id' | 'baseAmountMinor' | 'rate'>): Promise<void>;  
   deleteExpense(groupId: string, expenseId: string): Promise<void>;
+  editExpense(groupId: string, expenseId: string, input: Omit<Expense, 'id' | 'groupId' | 'baseAmountMinor' | 'rate'>,): Promise<void>;
   setBudget(groupId: string, month: string, limitMinor: number): Promise<void>;
 }
 
@@ -177,6 +178,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setData((d) => ({
         ...d,
         expenses: d.expenses.filter((e) => e.id !== expenseId),
+      }));
+    },
+    
+    async editExpense(groupId, expenseId, input) {
+      await api.editExpense(
+        groupId, expenseId, input.description, input.payerId,
+        input.amountMinor, input.currency, input.category, input.date, input.splitBetween,
+      );
+      // Same reasoning as addExpense: baseAmountMinor/rate are server-computed,
+      // so this is a placeholder until the caller's syncGroup brings back the
+      // real converted value.
+      setData((d) => ({
+        ...d,
+        expenses: d.expenses.map((e) =>
+          e.id === expenseId ? { ...e, ...input, baseAmountMinor: null, rate: null } : e,
+        ),
       }));
     },
 
