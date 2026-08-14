@@ -51,7 +51,7 @@ export default function DashboardPage() {
                     {group.members.length === 1 ? 'member' : 'members'}
                   </div>
                 </div>
-                <Avatars names={group.members.map((m) => m.name)} />
+                <Avatars members={group.members} />
                 <span className="chip">{group.baseCurrency}</span>
               </Link>
             </li>

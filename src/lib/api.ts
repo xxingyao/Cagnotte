@@ -275,3 +275,11 @@ export async function editGroupName(groupId: string, name: string): Promise<Grou
   });
   return toGroup(json as WireGroup);
 }
+
+export async function uploadAvatar(imageBase64: string, contentType: string): Promise<void> {
+  await request('/me/avatar', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ imageBase64, contentType }),
+  });
+}
