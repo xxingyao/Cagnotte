@@ -821,6 +821,13 @@ a {
 }
 
 @media (max-width: 768px) {
+  .app-layout {
+    /* Without this, .mobile-topbar is a flex item in the same row as
+       .app-main and stretches to fill the 100vh cross-axis instead of
+       sitting above the content as a top bar. */
+    flex-direction: column;
+  }
+
   .sidebar {
     position: fixed;
     top: 0;
