@@ -921,3 +921,7 @@ a {
   background: #fff;
   opacity: 0.9;
 }
+
+.avatar-img {
+  object-fit: cover;
+}
