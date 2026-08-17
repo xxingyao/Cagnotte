@@ -11,6 +11,14 @@ import { formatMoney, minorToAmountString, parseAmountToMinor } from '@/lib/mone
 import { baseCurrencyAmount, computeBalances, computeSettlements, type Balance, type Settlement } from '@/lib/balances';
 import type { Expense, Member } from '@/lib/types';
 
+// Settling up is recorded as an ordinary expense from the debtor to the
+// creditor, split entirely onto the creditor — computeBalances already nets
+// paid-minus-owed per member, so this cancels the debt with no separate
+// ledger or backend change needed. This category is never offered in the
+// "Add expense" form and is excluded from the budget's "spent" total below,
+// since it isn't real spending.
+const SETTLEMENT_CATEGORY = 'Settlement';
+
 export default function GroupPage() {
   const params = useParams<{ groupId: string }>();
   const router = useRouter();
@@ -24,6 +32,7 @@ export default function GroupPage() {
   const [confirmDeleteGroup, setConfirmDeleteGroup] = useState(false);
   const [deletingGroup, setDeletingGroup] = useState(false);
   const [editingGroupName, setEditingGroupName] = useState(false);
+  const [settlingKey, setSettlingKey] = useState<string | null>(null);
 
   const groupId = params.groupId;
 
@@ -94,7 +103,7 @@ export default function GroupPage() {
   // expense from before this feature) is silently excluded here — the
   // excludedCount banner below is what surfaces that to the user.
   const spent = groupExpenses
-    .filter((e) => e.date.startsWith(month))
+    .filter((e) => e.date.startsWith(month) && e.category !== SETTLEMENT_CATEGORY)
     .reduce((sum, e) => sum + (baseCurrencyAmount(e, group.baseCurrency) ?? 0), 0);
 
   const excludedCount = groupExpenses.filter(
@@ -184,7 +193,31 @@ export default function GroupPage() {
           youId={userId}
         />
 
-        <SettleUpCard settlements={settlements} currency={group.baseCurrency} />
+        <SettleUpCard
+          settlements={settlements}
+          currency={group.baseCurrency}
+          settlingKey={settlingKey}
+          onSettle={async (settlement, key) => {
+            setSettlingKey(key);
+            try {
+              await addExpense({
+                groupId: group.id,
+                description: `Settlement: ${settlement.fromName} → ${settlement.toName}`,
+                amountMinor: settlement.amountMinor,
+                currency: group.baseCurrency,
+                category: SETTLEMENT_CATEGORY,
+                payerId: settlement.fromId,
+                date: new Date().toISOString().slice(0, 10),
+                splitBetween: [settlement.toId],
+              });
+              await syncGroup(group.id);
+            } catch (error) {
+              setSyncError((error as Error).message);
+            } finally {
+              setSettlingKey(null);
+            }
+          }}
+        />
 
         <section className="card">
           <div className="card-head">
@@ -210,6 +243,10 @@ export default function GroupPage() {
                 const payer = group.members.find((m) => m.id === expense.payerId);
                 const payerLabel =
                   expense.payerId === userId ? 'You' : payer?.name ?? 'Someone';
+                const isSettlement = expense.category === SETTLEMENT_CATEGORY;
+                const recipient = group.members.find((m) => m.id === expense.splitBetween[0]);
+                const recipientLabel =
+                  expense.splitBetween[0] === userId ? 'you' : recipient?.name ?? 'someone';
                 return (
                   <Fragment key={expense.id}>
                     {showDate && <li className="day-label">{expense.date}</li>}
@@ -220,8 +257,11 @@ export default function GroupPage() {
                       <div className="row-main">
                         <div className="row-title">{expense.description}</div>
                         <div className="row-sub">
-                          {payerLabel} paid · split {expense.splitBetween.length} way
-                          {expense.splitBetween.length === 1 ? '' : 's'}
+                          {isSettlement
+                            ? `${payerLabel} paid ${recipientLabel}`
+                            : `${payerLabel} paid · split ${expense.splitBetween.length} way${
+                                expense.splitBetween.length === 1 ? '' : 's'
+                              }`}
                         </div>
                       </div>
                       <div className="row-end">
@@ -332,7 +372,6 @@ export default function GroupPage() {
         onClose={() => setEditingGroupName(false)}
       />
     </main>
-    
   );
 }
 
@@ -395,10 +434,12 @@ function BalancesCard({
 }
 
 function SettleUpCard({
-  settlements, currency,
+  settlements, currency, settlingKey, onSettle,
 }: {
   settlements: Settlement[];
   currency: string;
+  settlingKey: string | null;
+  onSettle: (settlement: Settlement, key: string) => void;
 }) {
   if (settlements.length === 0) return null;
 
@@ -411,19 +452,32 @@ function SettleUpCard({
         </span>
       </div>
 
-      {settlements.map((settlement, i) => (
-        <div key={`${settlement.fromId}-${settlement.toId}-${i}`} className="settle">
-          <strong>{settlement.fromName}</strong>
-          <span className="settle-arrow">pays</span>
-          <strong>{settlement.toName}</strong>
-          <span className="row-end amount" style={{ marginLeft: 'auto' }}>
-            {formatMoney(settlement.amountMinor, currency)}
-          </span>
-        </div>
-      ))}
+      {settlements.map((settlement, i) => {
+        const key = `${settlement.fromId}-${settlement.toId}-${i}`;
+        const isSettling = settlingKey === key;
+        return (
+          <div key={key} className="settle">
+            <strong>{settlement.fromName}</strong>
+            <span className="settle-arrow">pays</span>
+            <strong>{settlement.toName}</strong>
+            <span className="row-end amount" style={{ marginLeft: 'auto' }}>
+              {formatMoney(settlement.amountMinor, currency)}
+            </span>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              style={{ width: 'auto', padding: '4px 12px', fontSize: 13 }}
+              disabled={settlingKey !== null}
+              onClick={() => onSettle(settlement, key)}
+            >
+              {isSettling ? 'Recording…' : 'Mark as paid'}
+            </button>
+          </div>
+        );
+      })}
 
       <p className="split-hint" style={{ marginTop: 12, marginBottom: 0 }}>
-        Settle outside the app — Cagnotte only keeps the record.
+        Settle outside the app, then record it here — balances update once it&apos;s logged.
       </p>
     </section>
   );

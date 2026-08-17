@@ -8,4 +8,6 @@ export const CATEGORIES = [
 export const CATEGORY_EMOJI: Record<string, string> = {
   Food: '🍜', Groceries: '🛒', Rent: '🏠', Transport: '🚌',
   Utilities: '💡', Entertainment: '🎟️', Travel: '✈️', Other: '📦',
+  Settlement: '🤝',
 };
+

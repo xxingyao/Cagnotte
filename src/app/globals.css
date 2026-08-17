@@ -823,7 +823,7 @@ a {
 @media (max-width: 768px) {
   .app-layout {
     flex-direction: column;
-  }
+  }                                       
   .sidebar {
     position: fixed;
     top: 0;
