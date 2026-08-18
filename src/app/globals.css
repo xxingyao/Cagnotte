@@ -730,6 +730,8 @@ a {
   position: sticky;
   top: 0;
   height: 100vh;
+  overflow: hidden;
+  transition: width 0.2s ease;
 }
 
 .sidebar-head {
@@ -747,6 +749,28 @@ a {
   color: var(--ink-muted);
   font-size: 20px;
   line-height: 1;
+}
+
+.sidebar-collapse-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--ink-muted);
+  font-size: 16px;
+  line-height: 1;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.2s ease;
+}
+
+.sidebar-collapse-toggle:hover {
+  background: var(--surface-sunken);
+  color: var(--ink);
 }
 
 .sidebar-nav {
@@ -799,6 +823,9 @@ a {
 }
 
 .sidebar-signout {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-top: 8px;
   background: none;
   border: 0;
@@ -818,6 +845,47 @@ a {
 
 .sidebar-backdrop {
   display: none;
+}
+
+/* Icon-rail collapse — desktop only. Mobile already has its own show/hide
+   via the drawer (.is-open), so none of this should ever apply there, even
+   if a collapsed preference happens to be saved from a previous session on
+   a wider screen. */
+@media (min-width: 769px) {
+  .sidebar-collapse-toggle {
+    display: flex;
+  }
+
+  .sidebar.is-collapsed {
+    width: 72px;
+  }
+
+  .sidebar.is-collapsed .sidebar-head {
+    flex-direction: column;
+    gap: 12px;
+    padding: 0 0 20px;
+  }
+
+  .sidebar.is-collapsed .wordmark-text,
+  .sidebar.is-collapsed .sidebar-link-label,
+  .sidebar.is-collapsed .sidebar-user-info {
+    display: none;
+  }
+
+  .sidebar.is-collapsed .sidebar-link {
+    justify-content: center;
+    padding: 10px;
+  }
+
+  .sidebar.is-collapsed .sidebar-signout {
+    justify-content: center;
+  }
+
+  /* Same glyph, flipped — points the other way once collapsed instead of
+     swapping to a second icon. */
+  .sidebar.is-collapsed .sidebar-collapse-toggle {
+    transform: rotate(180deg);
+  }
 }
 
 @media (max-width: 768px) {
