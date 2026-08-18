@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useStore } from './StoreProvider';
 
 const NAV_ITEMS = [
@@ -18,6 +18,8 @@ export function Sidebar() {
   const { user, logout } = useStore();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const accountRef = useRef<HTMLDivElement>(null);
 
   // Read the saved preference after mount only — doing it during the initial
   // render would make the server-rendered markup (which knows nothing of
@@ -26,6 +28,20 @@ export function Sidebar() {
   useEffect(() => {
     setCollapsed(localStorage.getItem(COLLAPSE_KEY) === '1');
   }, []);
+
+  // Click anywhere outside the account button/menu closes it, same as any
+  // normal dropdown — without this it only ever closes by clicking the
+  // button again.
+  useEffect(() => {
+    if (!accountMenuOpen) return;
+    function handleClick(event: MouseEvent) {
+      if (accountRef.current && !accountRef.current.contains(event.target as Node)) {
+        setAccountMenuOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [accountMenuOpen]);
 
   function toggleCollapsed() {
     setCollapsed((current) => {
@@ -62,10 +78,43 @@ export function Sidebar() {
         className={`sidebar${mobileOpen ? ' is-open' : ''}${collapsed ? ' is-collapsed' : ''}`}
       >
         <div className="sidebar-head">
-          <Link href="/" className="wordmark" onClick={() => setMobileOpen(false)}>
-            <Image src="/logo.png" alt="" width={22} height={22} className="wordmark-dot" priority />
-            <span className="wordmark-text">Cagnotte</span>
-          </Link>
+          <div className="sidebar-account-wrap" ref={accountRef}>
+            <button
+              type="button"
+              className="sidebar-account"
+              onClick={() => setAccountMenuOpen((v) => !v)}
+              aria-expanded={accountMenuOpen}
+            >
+              <Image
+                src="/logo.png"
+                alt=""
+                width={26}
+                height={26}
+                className="wordmark-dot"
+                priority
+              />
+              <span className="sidebar-account-text">
+                <span className="sidebar-user-name">{user?.name || 'Cagnotte'}</span>
+                <span className="sidebar-user-email">{user?.email}</span>
+              </span>
+              <span className="sidebar-account-chevron" aria-hidden="true">⌄</span>
+            </button>
+            {accountMenuOpen && (
+              <div className="sidebar-account-menu">
+                <button
+                  type="button"
+                  className="sidebar-account-menu-item"
+                  onClick={() => {
+                    setAccountMenuOpen(false);
+                    logout();
+                  }}
+                >
+                  <span aria-hidden="true">🚪</span>
+                  Sign out
+                </button>
+              </div>
+            )}
+          </div>
           {/* Only visible on mobile via CSS — desktop's sidebar has nothing to close. */}
           <button
             type="button"
@@ -74,17 +123,6 @@ export function Sidebar() {
             aria-label="Close menu"
           >
             ×
-          </button>
-          {/* Only visible on desktop via CSS — mobile uses the drawer's
-              open/close instead of a collapsed icon rail. */}
-          <button
-            type="button"
-            className="sidebar-collapse-toggle"
-            onClick={toggleCollapsed}
-            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            ‹
           </button>
         </div>
 
@@ -103,14 +141,17 @@ export function Sidebar() {
           ))}
         </nav>
 
+        {/* Only visible on desktop via CSS — mobile uses the drawer's
+            open/close instead of a collapsed icon rail. */}
         <div className="sidebar-foot">
-          <div className="sidebar-user-info">
-            <div className="sidebar-user-name">{user?.name || user?.email}</div>
-            <div className="sidebar-user-email">{user?.email}</div>
-          </div>
-          <button type="button" className="sidebar-signout" onClick={logout} title="Sign out">
-            <span aria-hidden="true">🚪</span>
-            <span className="sidebar-link-label">Sign out</span>
+          <button
+            type="button"
+            className="sidebar-collapse-toggle"
+            onClick={toggleCollapsed}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            ‹
           </button>
         </div>
       </aside>
