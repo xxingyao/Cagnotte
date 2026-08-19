@@ -713,11 +713,46 @@ a {
   min-width: 0;
 }
 
+.app-layout .shell {
+  max-width: none;
+  padding: 32px 40px 80px;
+  transition: padding 0.2s ease;
+}
+
 .signed-out-topbar {
   display: flex;
   align-items: center;
   padding-bottom: 10px;
 }
+
+/* ---------- shared icon button ---------- */
+
+.icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--ink-soft);
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease,
+    transform 0.2s ease;
+}
+
+.icon-btn:hover {
+  border-color: var(--border-strong);
+  color: var(--ink);
+}
+
+.icon-btn:active {
+  transform: scale(0.95);
+}
+
+/* ---------- sidebar ---------- */
 
 .sidebar {
   width: 240px;
@@ -773,8 +808,21 @@ a {
 
 .sidebar-account-chevron {
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
   color: var(--ink-muted);
-  font-size: 12px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.sidebar-account:hover .sidebar-account-chevron {
+  border-color: var(--border-strong);
+  color: var(--ink);
 }
 
 .sidebar-account-menu {
@@ -793,7 +841,7 @@ a {
 .sidebar-account-menu-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
   padding: 8px 10px;
   background: none;
@@ -803,6 +851,7 @@ a {
   color: var(--ink-soft);
   font-size: 13.5px;
   text-align: left;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
 .sidebar-account-menu-item:hover {
@@ -810,36 +859,27 @@ a {
   color: var(--negative);
 }
 
-.sidebar-close {
-  display: none;
-  flex-shrink: 0;
-  background: none;
-  border: 0;
-  cursor: pointer;
-  color: var(--ink-muted);
-  font-size: 20px;
-  line-height: 1;
-}
-
-.sidebar-collapse-toggle {
-  display: none;
+.sidebar-menu-icon {
+  display: flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
-  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
   background: var(--surface-sunken);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  cursor: pointer;
-  color: var(--ink-soft);
-  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease,
-    transform 0.2s ease;
+  color: var(--ink-muted);
+  flex-shrink: 0;
+  transition: color 0.15s ease, border-color 0.15s ease;
 }
 
-.sidebar-collapse-toggle:hover {
+.sidebar-account-menu-item:hover .sidebar-menu-icon {
+  color: var(--negative);
   border-color: var(--border-strong);
-  color: var(--ink);
+}
+
+.sidebar-close {
+  display: none;
 }
 
 .sidebar-nav {
@@ -869,6 +909,29 @@ a {
 .sidebar-link.is-active {
   background: var(--brand-soft);
   color: var(--brand-ink);
+}
+
+.sidebar-link-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 15px;
+  flex-shrink: 0;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.sidebar-link:hover .sidebar-link-icon {
+  border-color: var(--border-strong);
+}
+
+.sidebar-link.is-active .sidebar-link-icon {
+  background: var(--brand);
+  border-color: var(--brand);
 }
 
 .sidebar-foot {
@@ -902,15 +965,8 @@ a {
   display: none;
 }
 
-/* Icon-rail collapse — desktop only. Mobile already has its own show/hide
-   via the drawer (.is-open), so none of this should ever apply there, even
-   if a collapsed preference happens to be saved from a previous session on
-   a wider screen. */
+/* Icon-rail collapse — desktop only */
 @media (min-width: 769px) {
-  .sidebar-collapse-toggle {
-    display: flex;
-  }
-
   .sidebar.is-collapsed {
     width: 72px;
   }
@@ -939,8 +995,6 @@ a {
     justify-content: center;
   }
 
-  /* Same glyph, flipped — points the other way once collapsed instead of
-     swapping to a second icon. */
   .sidebar.is-collapsed .sidebar-collapse-toggle {
     transform: rotate(180deg);
   }
@@ -948,10 +1002,11 @@ a {
 
 @media (max-width: 768px) {
   .app-layout {
-    /* Without this, .mobile-topbar is a flex item in the same row as
-       .app-main and stretches to fill the 100vh cross-axis instead of
-       sitting above the content as a top bar. */
     flex-direction: column;
+  }
+
+  .app-layout .shell {
+    padding: 20px 20px 80px;
   }
 
   .sidebar {
@@ -969,7 +1024,7 @@ a {
   }
 
   .sidebar-close {
-    display: block;
+    display: flex;
   }
 
   .mobile-topbar {
@@ -987,126 +1042,7 @@ a {
     background: rgba(6, 20, 58, 0.4);
     z-index: 105;
   }
-
-  .hamburger {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 4px;
-    width: 22px;
-    background: none;
-    border: 0;
-    cursor: pointer;
-    padding: 4px;
-  }
-
-  .hamburger span {
-    display: block;
-    height: 2px;
-    background: var(--ink);
-    border-radius: 1px;
-  }
 }
-
-/* Icon-rail collapse — desktop only. Mobile already has its own show/hide
-   via the drawer (.is-open), so none of this should ever apply there, even
-   if a collapsed preference happens to be saved from a previous session on
-   a wider screen. */
-@media (min-width: 769px) {
-  .sidebar-collapse-toggle {
-    display: flex;
-  }
-
-  .sidebar.is-collapsed {
-    width: 72px;
-  }
-
-  .sidebar.is-collapsed .sidebar-head {
-    flex-direction: column;
-    gap: 12px;
-    padding: 0 0 20px;
-  }
-
-  .sidebar.is-collapsed .wordmark-text,
-  .sidebar.is-collapsed .sidebar-link-label,
-  .sidebar.is-collapsed .sidebar-user-info {
-    display: none;
-  }
-
-  .sidebar.is-collapsed .sidebar-link {
-    justify-content: center;
-    padding: 10px;
-  }
-
-  .sidebar.is-collapsed .sidebar-signout {
-    justify-content: center;
-  }
-
-  /* Same glyph, flipped — points the other way once collapsed instead of
-     swapping to a second icon. */
-  .sidebar.is-collapsed .sidebar-collapse-toggle {
-    transform: rotate(180deg);
-  }
-}
-
-@media (max-width: 768px) {
-  .app-layout {
-    flex-direction: column;
-  }                                       
-  .sidebar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    z-index: 110;
-    transform: translateX(-100%);
-    transition: transform 0.2s ease;
-    box-shadow: 0 0 40px rgba(6, 20, 58, 0.15);
-  }
-
-  .sidebar.is-open {
-    transform: translateX(0);
-  }
-
-  .sidebar-close {
-    display: block;
-  }
-
-  .mobile-topbar {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    padding: 16px 20px;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .sidebar-backdrop {
-    display: block;
-    position: fixed;
-    inset: 0;
-    background: rgba(6, 20, 58, 0.4);
-    z-index: 105;
-  }
-
-  .hamburger {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 4px;
-    width: 22px;
-    background: none;
-    border: 0;
-    cursor: pointer;
-    padding: 4px;
-  }
-
-  .hamburger span {
-    display: block;
-    height: 2px;
-    background: var(--ink);
-    border-radius: 1px;
-  }
-}
-
 /* ---------- split picker ---------- */
 
 .split-picker {
