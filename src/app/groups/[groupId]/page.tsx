@@ -11,12 +11,6 @@ import { formatMoney, minorToAmountString, parseAmountToMinor } from '@/lib/mone
 import { baseCurrencyAmount, computeBalances, computeSettlements, type Balance, type Settlement } from '@/lib/balances';
 import type { Expense, Member } from '@/lib/types';
 
-// Settling up is recorded as an ordinary expense from the debtor to the
-// creditor, split entirely onto the creditor — computeBalances already nets
-// paid-minus-owed per member, so this cancels the debt with no separate
-// ledger or backend change needed. This category is never offered in the
-// "Add expense" form and is excluded from the budget's "spent" total below,
-// since it isn't real spending.
 const SETTLEMENT_CATEGORY = 'Settlement';
 
 export default function GroupPage() {
@@ -36,13 +30,10 @@ export default function GroupPage() {
 
   const groupId = params.groupId;
 
-  // Every hook has to run before any early return, so these sit above the
-  // `!ready` guard rather than next to the code that uses their results.
   useEffect(() => {
     if (!ready || !groupId) return;
     let cancelled = false;
     syncGroup(groupId).catch((error: Error) => {
-      // Cached expenses stay on screen; the banner says they may be stale.
       if (!cancelled) setSyncError(error.message);
     });
     return () => {
@@ -50,16 +41,10 @@ export default function GroupPage() {
     };
   }, [ready, groupId, syncGroup]);
 
-  // Someone else's spending won't appear on its own — there's no push channel.
-  // Refetching on tab focus covers the realistic case: you switch away, your
-  // friend logs dinner, you switch back.
   useEffect(() => {
     if (!ready || !groupId) return;
     const refresh = () => {
-      syncGroup(groupId).catch(() => {
-        // A failed background refresh shouldn't replace what's on screen with
-        // an error — the mount-time sync already reports real problems.
-      });
+      syncGroup(groupId).catch(() => {});
     };
     window.addEventListener('focus', refresh);
     return () => window.removeEventListener('focus', refresh);
@@ -78,7 +63,6 @@ export default function GroupPage() {
   const editingExpense = groupExpenses.find((e) => e.id === editingExpenseId) ?? null;
   const expenseToDelete = groupExpenses.find((e) => e.id === confirmDeleteExpenseId) ?? null;
 
-  // Memoised because this walks every expense in the group, on every render.
   const balances = useMemo(
     () => (group ? computeBalances(groupExpenses, group.members, group.baseCurrency) : []),
     [groupExpenses, group],
@@ -92,16 +76,18 @@ export default function GroupPage() {
     return (
       <main>
         <p className="empty">That group doesn&apos;t exist on this device.</p>
-        <Link href="/" className="backlink">← All groups</Link>
+        <Link href="/" className="back-btn">
+          <svg viewBox="0 0 20 20" width="14" height="14" fill="none" aria-hidden="true">
+            <path d="M13 16 7 10l6-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          All groups
+        </Link>
       </main>
     );
   }
 
   const month = new Date().toISOString().slice(0, 7);
 
-  // Anything that couldn't be converted (a rate lookup that failed, or an old
-  // expense from before this feature) is silently excluded here — the
-  // excludedCount banner below is what surfaces that to the user.
   const spent = groupExpenses
     .filter((e) => e.date.startsWith(month) && e.category !== SETTLEMENT_CATEGORY)
     .reduce((sum, e) => sum + (baseCurrencyAmount(e, group.baseCurrency) ?? 0), 0);
@@ -119,20 +105,25 @@ export default function GroupPage() {
 
   return (
     <main>
-      <Link href="/" className="backlink">← All groups</Link>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+      <Link href="/" className="back-btn">
+        <svg viewBox="0 0 20 20" width="14" height="14" fill="none" aria-hidden="true">
+          <path d="M13 16 7 10l6-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        All groups
+      </Link>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
         <h1 className="page-title" style={{ margin: 0 }}>{group.name}</h1>
         <button
           type="button"
+          className="icon-btn"
           aria-label="Rename group"
           title="Rename group"
           onClick={() => setEditingGroupName(true)}
-          style={{
-            background: 'none', border: 0, cursor: 'pointer',
-            color: 'var(--ink-muted)', fontSize: 15, lineHeight: 1,
-          }}
         >
-          ✎
+          <svg viewBox="0 0 20 20" width="14" height="14" fill="none" aria-hidden="true">
+            <path d="M13.5 3.5l3 3L6 17H3v-3L13.5 3.5z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
         </button>
       </div>
       <p className="page-sub">
@@ -167,8 +158,6 @@ export default function GroupPage() {
           onAdd={async (expense) => {
             try {
               await addExpense({ ...expense, groupId: group.id });
-              // Re-read from the server so the row on screen is the row that
-              // was actually stored, not an optimistic guess.
               await syncGroup(group.id);
             } catch (error) {
               setSyncError((error as Error).message);
@@ -224,12 +213,15 @@ export default function GroupPage() {
             <h2 className="card-title">Expenses</h2>
             <button
               type="button"
-              className="sub"
-              style={{ background: 'none', border: 0, cursor: 'pointer' }}
+              className="card-action"
               onClick={() =>
                 syncGroup(group.id).catch((error: Error) => setSyncError(error.message))
               }
             >
+              <svg viewBox="0 0 20 20" width="13" height="13" fill="none" aria-hidden="true">
+                <path d="M17 10A7 7 0 1 1 3 10a7 7 0 0 1 14 0z" stroke="currentColor" strokeWidth="1.5" />
+                <path d="M17 3v4h-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
               Refresh
             </button>
           </div>
@@ -274,32 +266,30 @@ export default function GroupPage() {
                           </div>
                         )}
                       </div>
-                      <button
-                        type="button"
-                        aria-label={`Edit ${expense.description}`}
-                        title="Edit"
-                        onClick={() => setEditingExpenseId(expense.id)}
-                        style={{
-                          background: 'none', border: 0, cursor: 'pointer',
-                          color: 'var(--ink-muted)', fontSize: 15, lineHeight: 1,
-                          padding: '0 0 0 10px',
-                        }}
-                      >
-                        ✎
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`Delete ${expense.description}`}
-                        title="Delete"
-                        onClick={() => setConfirmDeleteExpenseId(expense.id)}
-                        style={{
-                          background: 'none', border: 0, cursor: 'pointer',
-                          color: 'var(--ink-muted)', fontSize: 18, lineHeight: 1,
-                          padding: '0 0 0 6px',
-                        }}
-                      >
-                        ×
-                      </button>
+                      <div className="row-actions">
+                        <button
+                          type="button"
+                          className="icon-btn icon-btn-sm"
+                          aria-label={`Edit ${expense.description}`}
+                          title="Edit"
+                          onClick={() => setEditingExpenseId(expense.id)}
+                        >
+                          <svg viewBox="0 0 20 20" width="12" height="12" fill="none" aria-hidden="true">
+                            <path d="M13.5 3.5l3 3L6 17H3v-3L13.5 3.5z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                          </svg>
+                        </button>
+                        <button
+                          type="button"
+                          className="icon-btn icon-btn-sm"
+                          aria-label={`Delete ${expense.description}`}
+                          title="Delete"
+                          onClick={() => setConfirmDeleteExpenseId(expense.id)}
+                        >
+                          <svg viewBox="0 0 20 20" width="12" height="12" fill="none" aria-hidden="true">
+                            <path d="M5 5l10 10M15 5 5 15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                          </svg>
+                        </button>
+                      </div>
                     </li>
                   </Fragment>
                 );
@@ -311,10 +301,12 @@ export default function GroupPage() {
         <div style={{ textAlign: 'center', marginTop: 8 }}>
           <button
             type="button"
-            className="sub"
+            className="btn-delete-group"
             onClick={() => setConfirmDeleteGroup(true)}
-            style={{ background: 'none', border: 0, cursor: 'pointer', color: 'var(--negative)' }}
           >
+            <svg viewBox="0 0 20 20" width="14" height="14" fill="none" aria-hidden="true">
+              <path d="M3 6h14M8 6V4a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v2M5 6v10a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
             Delete this group
           </button>
         </div>
@@ -397,13 +389,14 @@ function BalancesCard({
         <ul className="rows">
           {balances.map((balance) => {
             const isYou = balance.memberId === youId;
-            const tone = balance.netMinor > 0 ? 'pos' : balance.netMinor < 0 ? 'neg' : 'dim';
+            const isSettled = balance.netMinor === 0;
+            const tone = balance.netMinor > 0 ? 'pos' : balance.netMinor < 0 ? 'neg' : '';
             const standing =
               balance.netMinor > 0
                 ? `${isYou ? "you're" : 'is'} owed ${formatMoney(balance.netMinor, currency)}`
                 : balance.netMinor < 0
                   ? `${isYou ? 'you owe' : 'owes'} ${formatMoney(-balance.netMinor, currency)}`
-                  : 'settled up';
+                  : '';
             return (
               <li key={balance.memberId} className="row">
                 <div className="row-main">
@@ -415,7 +408,16 @@ function BalancesCard({
                   </div>
                 </div>
                 <div className="row-end">
-                  <span className={`amount ${tone}`}>{standing}</span>
+                  {isSettled ? (
+                    <span className="chip chip-settled">
+                      <svg viewBox="0 0 16 16" width="12" height="12" fill="none" aria-hidden="true" style={{ marginRight: 4 }}>
+                        <path d="M3 8.5l3.5 3.5L13 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                      Settled
+                    </span>
+                  ) : (
+                    <span className={`amount ${tone}`}>{standing}</span>
+                  )}
                 </div>
               </li>
             );
@@ -465,11 +467,13 @@ function SettleUpCard({
             </span>
             <button
               type="button"
-              className="btn btn-ghost"
-              style={{ width: 'auto', padding: '4px 12px', fontSize: 13 }}
+              className="card-action"
               disabled={settlingKey !== null}
               onClick={() => onSettle(settlement, key)}
             >
+              <svg viewBox="0 0 16 16" width="12" height="12" fill="none" aria-hidden="true">
+                <path d="M3 8.5l3.5 3.5L13 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
               {isSettling ? 'Recording…' : 'Mark as paid'}
             </button>
           </div>
@@ -515,9 +519,15 @@ function BudgetCard({
     <section className="card">
       <div className="card-head">
         <h2 className="card-title">This month</h2>
-        <button type="button" className="sub" onClick={() => setEditing((v) => !v)}
-                style={{ background: 'none', border: 0, cursor: 'pointer' }}>
-          {limitMinor === null ? 'Set a budget' : 'Change budget'}
+        <button type="button" className="card-action" onClick={() => setEditing((v) => !v)}>
+          <svg viewBox="0 0 20 20" width="13" height="13" fill="none" aria-hidden="true">
+            {limitMinor === null ? (
+              <path d="M10 4v12M4 10h12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            ) : (
+              <path d="M13.5 3.5l3 3L6 17H3v-3L13.5 3.5z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            )}
+          </svg>
+          {limitMinor === null ? 'Set budget' : 'Edit budget'}
         </button>
       </div>
 
@@ -563,8 +573,6 @@ function EditGroupNameModal({
   const [draft, setDraft] = useState(currentName);
   const [error, setError] = useState<string | null>(null);
 
-  // Re-sync whenever the modal opens — otherwise reopening it after a cancel
-  // would show whatever was left over from last time instead of the real name.
   useEffect(() => {
     if (open) {
       setDraft(currentName);
@@ -637,10 +645,6 @@ function AddExpenseCard({
   const [splitBetween, setSplitBetween] = useState<string[]>(members.map((m) => m.id));
   const [error, setError] = useState<string | null>(null);
 
-  // One effect drives both "start/stop editing" and "a member joined mid-
-  // session". Keyed on editing.id (not the object) since every sync hands
-  // back a new Expense object even when nothing changed — using the object
-  // itself would re-run this every render and wipe whatever you're typing.
   const memberKey = members.map((m) => m.id).join(',');
   useEffect(() => {
     if (editing) {
@@ -706,12 +710,10 @@ function AddExpenseCard({
       <div className="card-head">
         <h2 className="card-title">{editing ? 'Edit expense' : 'Add an expense'}</h2>
         {editing && (
-          <button
-            type="button"
-            className="sub"
-            onClick={onCancelEdit}
-            style={{ background: 'none', border: 0, cursor: 'pointer' }}
-          >
+          <button type="button" className="card-action" onClick={onCancelEdit}>
+            <svg viewBox="0 0 20 20" width="12" height="12" fill="none" aria-hidden="true">
+              <path d="M5 5l10 10M15 5 5 15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
             Cancel
           </button>
         )}
