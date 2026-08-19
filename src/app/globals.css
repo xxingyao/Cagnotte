@@ -1423,3 +1423,40 @@ a {
 .select:focus {
   background-color: var(--bg);
 }
+
+/* ---------- friends page ---------- */
+
+.friend-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-pill);
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 650;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.friend-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.friend-group-chip {
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
+.friends-search {
+  width: 160px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+/* danger variant for icon-btn (delete/remove) */
+.icon-btn.is-danger:hover {
+  border-color: var(--negative);
+  color: var(--negative);
+}
