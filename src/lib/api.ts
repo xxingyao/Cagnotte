@@ -283,3 +283,133 @@ export async function uploadAvatar(imageBase64: string, contentType: string): Pr
     body: JSON.stringify({ imageBase64, contentType }),
   });
 }
+
+// ─── Friends ───
+
+export interface ApiFriend {
+  friendId: string;
+  name: string;
+  email: string;
+  notes: string;
+  addedAt: string;
+}
+
+export async function listFriends(): Promise<ApiFriend[]> {
+  const json = await request('/me/friends');
+  if (!Array.isArray(json)) throw new Error('Server did not return a friends list.');
+  return json as ApiFriend[];
+}
+
+export async function addFriend(
+  name: string, email: string, notes: string,
+): Promise<ApiFriend> {
+  const json = await request('/me/friends', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, email, notes }),
+  });
+  return json as ApiFriend;
+}
+
+export async function editFriend(
+  friendId: string, name: string, email: string, notes: string,
+): Promise<void> {
+  await request(`/me/friends/${encodeURIComponent(friendId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, email, notes }),
+  });
+}
+
+export async function deleteFriend(friendId: string): Promise<void> {
+  await request(`/me/friends/${encodeURIComponent(friendId)}`, { method: 'DELETE' });
+}
+
+// ─── Investments ───
+
+export interface ApiInvestment {
+  investmentId: string;
+  name: string;
+  type: string;
+  icon: string;
+  shares: number;
+  costBasis: number;
+  currentValue: number;
+  updatedAt: string;
+}
+
+export async function listInvestments(): Promise<ApiInvestment[]> {
+  const json = await request('/me/investments');
+  if (!Array.isArray(json)) throw new Error('Server did not return an investments list.');
+  return json as ApiInvestment[];
+}
+
+export async function addInvestment(
+  input: Omit<ApiInvestment, 'investmentId' | 'updatedAt'>,
+): Promise<ApiInvestment> {
+  const json = await request('/me/investments', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return json as ApiInvestment;
+}
+
+export async function editInvestment(
+  investmentId: string,
+  input: Omit<ApiInvestment, 'investmentId' | 'updatedAt'>,
+): Promise<void> {
+  await request(`/me/investments/${encodeURIComponent(investmentId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function deleteInvestment(investmentId: string): Promise<void> {
+  await request(`/me/investments/${encodeURIComponent(investmentId)}`, { method: 'DELETE' });
+}
+
+// ─── Assets ───
+
+export interface ApiAsset {
+  assetId: string;
+  name: string;
+  category: string;
+  icon: string;
+  value: number;
+  notes: string;
+  lastUpdated: string;
+}
+
+export async function listAssets(): Promise<ApiAsset[]> {
+  const json = await request('/me/assets');
+  if (!Array.isArray(json)) throw new Error('Server did not return an assets list.');
+  return json as ApiAsset[];
+}
+
+export async function addAsset(
+  input: Omit<ApiAsset, 'assetId' | 'lastUpdated'>,
+): Promise<ApiAsset> {
+  const json = await request('/me/assets', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return json as ApiAsset;
+}
+
+export async function editAsset(
+  assetId: string,
+  input: Omit<ApiAsset, 'assetId' | 'lastUpdated'>,
+): Promise<void> {
+  await request(`/me/assets/${encodeURIComponent(assetId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function deleteAsset(assetId: string): Promise<void> {
+  await request(`/me/assets/${encodeURIComponent(assetId)}`, { method: 'DELETE' });
+}

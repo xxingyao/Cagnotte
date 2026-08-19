@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useStore } from '@/components/StoreProvider';
+import * as api from '@/lib/api';
 
 interface Friend {
   id: string;
@@ -11,50 +12,31 @@ interface Friend {
   addedAt: string;
 }
 
-const STORAGE_KEY = 'cagnotte:friends';
-
-function loadFriends(): Friend[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as Friend[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveFriends(friends: Friend[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(friends));
-}
-
-function today() {
-  return new Date().toISOString().slice(0, 10);
+function fromWire(w: api.ApiFriend): Friend {
+  return { id: w.friendId, name: w.name, email: w.email, notes: w.notes, addedAt: w.addedAt };
 }
 
 export default function FriendsPage() {
   const { data, userId } = useStore();
   const [friends, setFriends] = useState<Friend[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  // form state
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [notes, setNotes] = useState('');
 
-  // Load from localStorage on mount
   useEffect(() => {
-    setFriends(loadFriends());
-    setLoaded(true);
+    api.listFriends()
+      .then((list) => setFriends(list.map(fromWire)))
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
   }, []);
 
-  // Persist whenever friends change (skip the initial empty-state write)
-  useEffect(() => {
-    if (loaded) saveFriends(friends);
-  }, [friends, loaded]);
-
-  // Build a lookup: member name → list of group names they share with you
   const sharedGroupsByName = useMemo(() => {
     const map = new Map<string, string[]>();
     for (const group of data.groups) {
@@ -70,11 +52,9 @@ export default function FriendsPage() {
     return map;
   }, [data.groups, userId]);
 
-  // Also match by email if the member name matches a friend's email
   function getSharedGroups(friend: Friend): string[] {
     const byName = sharedGroupsByName.get(friend.name.toLowerCase().trim()) ?? [];
     if (byName.length > 0) return byName;
-    // Fallback: check if any member name matches the friend's email
     if (friend.email) {
       return sharedGroupsByName.get(friend.email.toLowerCase().trim()) ?? [];
     }
@@ -105,28 +85,41 @@ export default function FriendsPage() {
     setShowModal(true);
   }
 
-  function save() {
+  async function save() {
     if (!name.trim()) return;
-    const entry: Friend = {
-      id: editId ?? crypto.randomUUID(),
-      name: name.trim(),
-      email: email.trim(),
-      notes: notes.trim(),
-      addedAt: editId ? friends.find((f) => f.id === editId)?.addedAt ?? today() : today(),
-    };
-    if (editId) {
-      setFriends((prev) => prev.map((f) => (f.id === editId ? entry : f)));
-    } else {
-      setFriends((prev) => [...prev, entry]);
+    setSaving(true);
+    setError(null);
+    try {
+      if (editId) {
+        await api.editFriend(editId, name.trim(), email.trim(), notes.trim());
+        setFriends((prev) =>
+          prev.map((f) =>
+            f.id === editId ? { ...f, name: name.trim(), email: email.trim(), notes: notes.trim() } : f,
+          ),
+        );
+      } else {
+        const created = await api.addFriend(name.trim(), email.trim(), notes.trim());
+        setFriends((prev) => [...prev, fromWire(created)]);
+      }
+      setShowModal(false);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSaving(false);
     }
-    setShowModal(false);
   }
 
-  function remove(id: string) {
-    setFriends((prev) => prev.filter((f) => f.id !== id));
+  async function remove(id: string) {
+    setError(null);
+    try {
+      await api.deleteFriend(id);
+      setFriends((prev) => prev.filter((f) => f.id !== id));
+    } catch (e) {
+      setError((e as Error).message);
+    }
   }
 
-  if (!loaded) return <p className="sub">Loading…</p>;
+  if (loading) return <p className="sub">Loading…</p>;
 
   return (
     <main>
@@ -134,6 +127,10 @@ export default function FriendsPage() {
         <h1 className="page-title">Friends</h1>
         <p className="page-sub">People you split expenses with. Add them here for quick reference.</p>
       </div>
+
+      {error && (
+        <p className="split-hint" style={{ color: 'var(--negative)', marginBottom: 16 }}>{error}</p>
+      )}
 
       <div className="tracking-summary">
         <div className="summary-card">
@@ -204,7 +201,6 @@ export default function FriendsPage() {
                     .join('')
                     .slice(0, 2)
                     .toUpperCase();
-                  // Deterministic colour from name
                   const hue =
                     friend.name.split('').reduce((sum, ch) => sum + ch.charCodeAt(0), 0) % 360;
                   return (
@@ -230,9 +226,7 @@ export default function FriendsPage() {
                         {shared.length > 0 ? (
                           <div className="friend-groups">
                             {shared.map((g) => (
-                              <span key={g} className="chip friend-group-chip">
-                                {g}
-                              </span>
+                              <span key={g} className="chip friend-group-chip">{g}</span>
                             ))}
                           </div>
                         ) : (
@@ -244,22 +238,12 @@ export default function FriendsPage() {
                       </td>
                       <td>
                         <div className="tracking-actions">
-                          <button
-                            type="button"
-                            className="icon-btn icon-btn-sm"
-                            onClick={() => openEdit(friend)}
-                            title="Edit"
-                          >
+                          <button type="button" className="icon-btn icon-btn-sm" onClick={() => openEdit(friend)} title="Edit">
                             <svg viewBox="0 0 20 20" width="12" height="12" fill="none" aria-hidden="true">
                               <path d="M13.5 3.5l3 3L6 17H3v-3L13.5 3.5z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
                             </svg>
                           </button>
-                          <button
-                            type="button"
-                            className="icon-btn icon-btn-sm is-danger"
-                            onClick={() => remove(friend.id)}
-                            title="Remove"
-                          >
+                          <button type="button" className="icon-btn icon-btn-sm is-danger" onClick={() => remove(friend.id)} title="Remove">
                             <svg viewBox="0 0 20 20" width="12" height="12" fill="none" aria-hidden="true">
                               <path d="M5 5l10 10M15 5 5 15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
                             </svg>
@@ -275,18 +259,12 @@ export default function FriendsPage() {
         )}
       </div>
 
-      {/* Add / Edit modal */}
       {showModal && (
         <div className="modal-backdrop" onClick={() => setShowModal(false)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
             <div className="modal-head">
               <h2 className="modal-title">{editId ? 'Edit friend' : 'Add friend'}</h2>
-              <button
-                type="button"
-                className="icon-btn icon-btn-sm"
-                onClick={() => setShowModal(false)}
-                aria-label="Close"
-              >
+              <button type="button" className="icon-btn icon-btn-sm" onClick={() => setShowModal(false)} aria-label="Close">
                 <svg viewBox="0 0 20 20" width="12" height="12" fill="none" aria-hidden="true">
                   <path d="M5 5l10 10M15 5 5 15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
                 </svg>
@@ -294,42 +272,23 @@ export default function FriendsPage() {
             </div>
             <label className="field">
               <span className="field-label">Name</span>
-              <input
-                className="input"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Sarah"
-                autoFocus
-              />
+              <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Sarah" autoFocus />
             </label>
             <label className="field">
               <span className="field-label">Email (optional)</span>
-              <input
-                className="input"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="e.g. sarah@example.com"
-              />
+              <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="e.g. sarah@example.com" />
             </label>
             <label className="field">
               <span className="field-label">Notes (optional)</span>
-              <input
-                className="input"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="e.g. Roommate, colleague"
-              />
+              <input className="input" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. Roommate, colleague" />
             </label>
             <p className="split-hint" style={{ marginTop: 4 }}>
               💡 Use the same name they use in groups so shared groups show up automatically.
             </p>
             <div className="modal-actions">
-              <button type="button" className="btn btn-ghost" onClick={() => setShowModal(false)}>
-                Cancel
-              </button>
-              <button type="button" className="btn" onClick={save} disabled={!name.trim()}>
-                {editId ? 'Save changes' : 'Add friend'}
+              <button type="button" className="btn btn-ghost" onClick={() => setShowModal(false)}>Cancel</button>
+              <button type="button" className="btn" onClick={save} disabled={!name.trim() || saving}>
+                {saving ? 'Saving…' : editId ? 'Save changes' : 'Add friend'}
               </button>
             </div>
           </div>

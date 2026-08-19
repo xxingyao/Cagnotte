@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import * as api from '@/lib/api';
 
 interface Investment {
   id: string;
@@ -25,16 +26,38 @@ function fmt(n: number) {
   return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function fromWire(w: api.ApiInvestment): Investment {
+  return {
+    id: w.investmentId,
+    name: w.name,
+    type: w.type,
+    icon: w.icon,
+    shares: w.shares,
+    costBasis: w.costBasis,
+    currentValue: w.currentValue,
+  };
+}
+
 export default function InvestmentsPage() {
   const [items, setItems] = useState<Investment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const [name, setName] = useState('');
   const [type, setType] = useState('brokerage');
   const [shares, setShares] = useState('');
   const [costBasis, setCostBasis] = useState('');
   const [currentValue, setCurrentValue] = useState('');
+
+  useEffect(() => {
+    api.listInvestments()
+      .then((list) => setItems(list.map(fromWire)))
+      .catch((e) => setError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
 
   const totalValue = items.reduce((sum, i) => sum + i.currentValue, 0);
   const totalCost = items.reduce((sum, i) => sum + i.costBasis, 0);
@@ -61,27 +84,45 @@ export default function InvestmentsPage() {
     setShowModal(true);
   }
 
-  function save() {
-    const entry: Investment = {
-      id: editId ?? crypto.randomUUID(),
+  async function save() {
+    setSaving(true);
+    setError(null);
+    const icon = ACCOUNT_TYPES.find((t) => t.value === type)?.icon ?? '📁';
+    const input = {
       name: name.trim() || 'Untitled',
       type,
-      icon: ACCOUNT_TYPES.find((t) => t.value === type)?.icon ?? '📁',
+      icon,
       shares: parseFloat(shares) || 0,
       costBasis: parseFloat(costBasis) || 0,
       currentValue: parseFloat(currentValue) || 0,
     };
-    if (editId) {
-      setItems((prev) => prev.map((i) => (i.id === editId ? entry : i)));
-    } else {
-      setItems((prev) => [...prev, entry]);
+    try {
+      if (editId) {
+        await api.editInvestment(editId, input);
+        setItems((prev) => prev.map((i) => (i.id === editId ? { id: editId, ...input } : i)));
+      } else {
+        const created = await api.addInvestment(input);
+        setItems((prev) => [...prev, fromWire(created)]);
+      }
+      setShowModal(false);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSaving(false);
     }
-    setShowModal(false);
   }
 
-  function remove(id: string) {
-    setItems((prev) => prev.filter((i) => i.id !== id));
+  async function remove(id: string) {
+    setError(null);
+    try {
+      await api.deleteInvestment(id);
+      setItems((prev) => prev.filter((i) => i.id !== id));
+    } catch (e) {
+      setError((e as Error).message);
+    }
   }
+
+  if (loading) return <p className="sub">Loading…</p>;
 
   return (
     <main>
@@ -89,6 +130,10 @@ export default function InvestmentsPage() {
         <h1 className="page-title">Investments</h1>
         <p className="page-sub">Track your investment accounts and portfolio performance.</p>
       </div>
+
+      {error && (
+        <p className="split-hint" style={{ color: 'var(--negative)', marginBottom: 16 }}>{error}</p>
+      )}
 
       <div className="tracking-summary">
         <div className="summary-card">
@@ -174,22 +219,12 @@ export default function InvestmentsPage() {
                       </td>
                       <td>
                         <div className="tracking-actions">
-                          <button
-                            type="button"
-                            className="icon-btn icon-btn-sm"
-                            onClick={() => openEdit(item)}
-                            title="Edit"
-                          >
+                          <button type="button" className="icon-btn icon-btn-sm" onClick={() => openEdit(item)} title="Edit">
                             <svg viewBox="0 0 20 20" width="12" height="12" fill="none" aria-hidden="true">
                               <path d="M13.5 3.5l3 3L6 17H3v-3L13.5 3.5z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
                             </svg>
                           </button>
-                          <button
-                            type="button"
-                            className="icon-btn icon-btn-sm is-danger"
-                            onClick={() => remove(item.id)}
-                            title="Delete"
-                          >
+                          <button type="button" className="icon-btn icon-btn-sm is-danger" onClick={() => remove(item.id)} title="Delete">
                             <svg viewBox="0 0 20 20" width="12" height="12" fill="none" aria-hidden="true">
                               <path d="M5 5l10 10M15 5 5 15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
                             </svg>
@@ -218,12 +253,7 @@ export default function InvestmentsPage() {
             </div>
             <label className="field">
               <span className="field-label">Account name</span>
-              <input
-                className="input"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. Tiger Brokerage"
-              />
+              <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Tiger Brokerage" />
             </label>
             <label className="field">
               <span className="field-label">Account type</span>
@@ -236,42 +266,21 @@ export default function InvestmentsPage() {
             <div className="grid-2">
               <label className="field">
                 <span className="field-label">Shares / Units</span>
-                <input
-                  className="input"
-                  type="number"
-                  step="any"
-                  value={shares}
-                  onChange={(e) => setShares(e.target.value)}
-                  placeholder="0"
-                />
+                <input className="input" type="number" step="any" value={shares} onChange={(e) => setShares(e.target.value)} placeholder="0" />
               </label>
               <label className="field">
                 <span className="field-label">Cost basis ($)</span>
-                <input
-                  className="input"
-                  type="number"
-                  step="0.01"
-                  value={costBasis}
-                  onChange={(e) => setCostBasis(e.target.value)}
-                  placeholder="0.00"
-                />
+                <input className="input" type="number" step="0.01" value={costBasis} onChange={(e) => setCostBasis(e.target.value)} placeholder="0.00" />
               </label>
             </div>
             <label className="field">
               <span className="field-label">Current value ($)</span>
-              <input
-                className="input"
-                type="number"
-                step="0.01"
-                value={currentValue}
-                onChange={(e) => setCurrentValue(e.target.value)}
-                placeholder="0.00"
-              />
+              <input className="input" type="number" step="0.01" value={currentValue} onChange={(e) => setCurrentValue(e.target.value)} placeholder="0.00" />
             </label>
             <div className="modal-actions">
               <button type="button" className="btn btn-ghost" onClick={() => setShowModal(false)}>Cancel</button>
-              <button type="button" className="btn" onClick={save}>
-                {editId ? 'Save changes' : 'Add account'}
+              <button type="button" className="btn" onClick={save} disabled={saving}>
+                {saving ? 'Saving…' : editId ? 'Save changes' : 'Add account'}
               </button>
             </div>
           </div>
