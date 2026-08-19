@@ -1093,3 +1093,215 @@ a {
 .avatar-img {
   object-fit: cover;
 }
+
+/* ---------- tracking pages (investments / assets) ---------- */
+
+.tracking-header {
+  margin-bottom: 24px;
+}
+
+.tracking-summary {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.summary-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px 24px;
+  flex: 1;
+  min-width: 180px;
+}
+
+.summary-card-label {
+  font-size: 12px;
+  font-weight: 620;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin: 0 0 6px;
+}
+
+.summary-card-value {
+  font-size: 28px;
+  font-weight: 660;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+}
+
+.tracking-table-wrap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.tracking-table-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tracking-table-title {
+  font-size: 13px;
+  font-weight: 620;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin: 0;
+}
+
+.tracking-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  background: var(--brand);
+  color: #fff;
+  border: 0;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 580;
+  cursor: pointer;
+  transition: filter 0.15s ease;
+}
+
+.tracking-add-btn:hover {
+  filter: brightness(0.93);
+}
+
+.tracking-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.tracking-table th {
+  text-align: left;
+  padding: 10px 20px;
+  font-size: 11.5px;
+  font-weight: 620;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-sunken);
+}
+
+.tracking-table th:last-child,
+.tracking-table td:last-child {
+  text-align: right;
+}
+
+.tracking-table td {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.tracking-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.tracking-table tr {
+  transition: background 0.12s ease;
+}
+
+.tracking-table tbody tr:hover {
+  background: var(--surface-sunken);
+}
+
+.tracking-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tracking-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.tracking-name {
+  font-weight: 560;
+}
+
+.tracking-type {
+  font-size: 12px;
+  color: var(--ink-muted);
+  margin-top: 1px;
+}
+
+.tracking-empty {
+  padding: 48px 20px;
+  text-align: center;
+  color: var(--ink-muted);
+  font-size: 14px;
+}
+
+.tracking-empty-icon {
+  font-size: 36px;
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+
+.tracking-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.tracking-action-btn {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  color: var(--ink-muted);
+  font-size: 14px;
+  padding: 4px 6px;
+  border-radius: 4px;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.tracking-action-btn:hover {
+  background: var(--surface-sunken);
+  color: var(--ink);
+}
+
+.tracking-action-btn.is-danger:hover {
+  color: var(--negative);
+}
+
+@media (max-width: 640px) {
+  .tracking-summary {
+    flex-direction: column;
+  }
+
+  .summary-card-value {
+    font-size: 24px;
+  }
+
+  .tracking-table th,
+  .tracking-table td {
+    padding: 10px 14px;
+  }
+
+  .tracking-table .hide-mobile {
+    display: none;
+  }
+}
