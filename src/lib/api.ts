@@ -5,6 +5,23 @@ const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE ??
   'https://oxfhpuu8a8.execute-api.us-east-1.amazonaws.com/dev';
 
+const cache = new Map<string, { data: unknown; at: number }>();
+const CACHE_TTL = 60_000; // 1 minute
+
+async function cachedRequest(path: string): Promise<unknown> {
+  const hit = cache.get(path);
+  if (hit && Date.now() - hit.at < CACHE_TTL) return hit.data;
+  const data = await request(path);
+  cache.set(path, { data, at: Date.now() });
+  return data;
+}
+
+function invalidate(prefix: string) {
+  for (const key of cache.keys()) {
+    if (key.startsWith(prefix)) cache.delete(key);
+  }
+}
+
 /** Carries the HTTP status so callers can treat 404 as "absent" not "broken". */
 export class ApiError extends Error {
   status: number;
@@ -14,18 +31,6 @@ export class ApiError extends Error {
   }
 }
 
-/**
- * One place to talk to the Lambda API.
- *
- * Every request carries the Cognito id token. API Gateway verifies it against
- * Cognito's signing keys before the Lambda runs, and the Lambda reads the user
- * id from those verified claims — so the client never gets to assert who it is.
- *
- * The `ok` check alone isn't enough either: a misconfigured API Gateway can hand
- * back HTTP 200 with a Lambda crash dump as the body. So every call also
- * confirms the field it actually needs is present, or a broken backend shows up
- * as phantom data instead of an error.
- */
 async function request(path: string, init?: RequestInit) {
   const token = await getIdToken();
   if (!token) throw new ApiError('You are signed out. Sign in again to continue.', 401);
@@ -37,13 +42,10 @@ async function request(path: string, init?: RequestInit) {
       headers: { ...(init?.headers ?? {}), Authorization: token },
     });
   } catch {
-    // Network down, DNS failure, or the browser blocked it (CORS).
     throw new Error('Could not reach the server. Check your connection.');
   }
 
   if (response.status === 401) {
-    // Token rejected — expired beyond refresh, revoked, or issued by a user
-    // pool that no longer exists. Nothing to do but sign in again.
     logout();
     throw new ApiError('Your session ended. Sign in again.', 401);
   }
@@ -56,7 +58,6 @@ async function request(path: string, init?: RequestInit) {
     throw new Error(`Server returned a non-JSON response (HTTP ${response.status}).`);
   }
 
-  // A Lambda that failed to start reports itself in the body, not the status.
   const asError = json as { errorMessage?: string; error?: string } | null;
   const message = asError?.errorMessage ?? asError?.error;
   if (!response.ok || message) {
@@ -71,11 +72,6 @@ export interface CreatedGroup {
   inviteCode: string;
 }
 
-/**
- * DynamoDB stores expenses under different field names than the app uses
- * (`amount`/`expenseId` vs `amountMinor`/`id`). Translating here keeps that
- * detail from leaking into components.
- */
 interface WireExpense {
   groupId: string;
   expenseId: string;
@@ -119,8 +115,6 @@ function toExpense(wire: WireExpense): Expense {
     category: wire.category ?? 'Other',
     payerId: wire.payerId ?? '',
     date: wire.date ?? '',
-    // Rows written before splitting existed read as "paid for themselves",
-    // which nets to zero rather than inventing debt nobody agreed to.
     splitBetween: wire.splitBetween ?? [wire.payerId],
     baseAmountMinor: wire.baseAmountMinor ?? null,
     rate: wire.rate ?? null,
@@ -181,7 +175,6 @@ export async function getGroup(groupId: string): Promise<Group> {
   return toGroup(json as WireGroup);
 }
 
-/** Returns null when no group has that code — a normal outcome, not an error. */
 export async function getGroupByCode(inviteCode: string): Promise<Group | null> {
   try {
     const json = await request(`/invites/${encodeURIComponent(inviteCode)}`);
@@ -202,8 +195,6 @@ export async function joinGroup(groupId: string, name: string): Promise<Group> {
 }
 
 export async function listUserGroups(): Promise<Group[]> {
-  // No user id in the path — the server takes it from the token, so there's no
-  // way to ask for someone else's groups.
   const json = await request('/me/groups');
   if (!Array.isArray(json)) {
     throw new Error('Server did not return a group list.');
@@ -284,7 +275,7 @@ export async function uploadAvatar(imageBase64: string, contentType: string): Pr
   });
 }
 
-// ─── Friends ────────────────────────────────────────────────────────────────
+// ─── Friends (request system) ───────────────────────────────────────────────
 
 export async function listFriends(): Promise<Friend[]> {
   const json = await request('/friends');
@@ -316,4 +307,90 @@ export async function respondFriendRequest(
 
 export async function removeFriend(friendId: string): Promise<void> {
   await request(`/friends/${encodeURIComponent(friendId)}`, { method: 'DELETE' });
+}
+
+// ─── Investments ────────────────────────────────────────────────────────────
+
+export interface ApiInvestment {
+  investmentId: string;
+  name: string;
+  type: string;
+  icon: string;
+  shares: number;
+  costBasis: number;
+  currentValue: number;
+  updatedAt: string;
+}
+
+export async function listInvestments(): Promise<ApiInvestment[]> {
+  const json = await cachedRequest('/me/investments');
+  if (!Array.isArray(json)) throw new Error('Server did not return an investment list.');
+  return json as ApiInvestment[];
+}
+
+export async function addInvestment(
+  input: Omit<ApiInvestment, 'investmentId' | 'updatedAt'>,
+): Promise<ApiInvestment> {
+  const json = await request('/me/investments', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  invalidate('/me/investments');
+  return json as ApiInvestment;
+}
+
+export async function editInvestment(
+  investmentId: string,
+  input: Omit<ApiInvestment, 'investmentId' | 'updatedAt'>,
+): Promise<void> {
+  await request(`/me/investments/${encodeURIComponent(investmentId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function deleteInvestment(investmentId: string): Promise<void> {
+  await request(`/me/investments/${encodeURIComponent(investmentId)}`, { method: 'DELETE' });
+}
+
+// ─── Assets ─────────────────────────────────────────────────────────────────
+
+export interface ApiAsset {
+  assetId: string;
+  name: string;
+  category: string;
+  icon: string;
+  value: number;
+  notes: string;
+  lastUpdated: string;
+}
+
+export async function listAssets(): Promise<ApiAsset[]> {
+  const json = await cachedRequest('/me/assets');
+  if (!Array.isArray(json)) throw new Error('Server did not return an asset list.');
+  return json as ApiAsset[];
+}
+
+export async function addAsset(input: Omit<ApiAsset, 'assetId' | 'lastUpdated'>): Promise<ApiAsset> {
+  const json = await request('/me/assets', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  invalidate('/me/assets');
+  return json as ApiAsset;
+}
+
+export async function editAsset(assetId: string, input: Omit<ApiAsset, 'assetId' | 'lastUpdated'>): Promise<void> {
+  await request(`/me/assets/${encodeURIComponent(assetId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function deleteAsset(assetId: string): Promise<void> {
+  await request(`/me/assets/${encodeURIComponent(assetId)}`, { method: 'DELETE' });
 }
