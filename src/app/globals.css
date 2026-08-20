@@ -1094,6 +1094,108 @@ a {
   object-fit: cover;
 }
 
+/* ---------- login page ---------- */
+
+.login-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 20px;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 36px 28px;
+}
+
+.login-header {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.login-logo {
+  border-radius: 50%;
+  margin-bottom: 16px;
+}
+
+.login-title {
+  font-size: 22px;
+  font-weight: 660;
+  letter-spacing: -0.02em;
+  margin: 0 0 6px;
+}
+
+.login-sub {
+  color: var(--ink-soft);
+  font-size: 14px;
+  margin: 0;
+}
+
+.login-message {
+  background: var(--positive-soft);
+  color: var(--positive);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size: 13.5px;
+  margin-bottom: 16px;
+}
+
+.login-error {
+  background: var(--negative-soft);
+  color: var(--negative);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size: 13.5px;
+  margin-bottom: 16px;
+}
+
+.login-btn {
+  margin-top: 4px;
+}
+
+.login-links {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.link-btn {
+  background: none;
+  border: 0;
+  color: var(--brand-ink);
+  font: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+  padding: 0;
+}
+
+.link-btn:hover {
+  text-decoration: underline;
+}
+
+.link-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Hide the signed-out topbar when the login page is showing,
+   and let the login page fill the viewport. */
+.shell:has(.login-page) .signed-out-topbar {
+  display: none;
+}
+
+.shell:has(.login-page) {
+  max-width: none;
+  padding: 0;
+}
+
 /* ---------- tracking pages (investments / assets) ---------- */
 
 .tracking-header {
