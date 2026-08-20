@@ -1549,3 +1549,8 @@ a {
 .app-layout:has(.login-page) .app-main {
   margin-left: 0;
 }
+
+/* Hide signed-out topbar on login page */
+.shell:has(.login-page) .signed-out-topbar {
+  display: none;
+}
