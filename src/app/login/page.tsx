@@ -147,8 +147,8 @@ export default function LoginPage() {
         {error && <p className="login-error">{error}</p>}
 
         {/* ─── Sign In ─── */}
-        {view === 'signIn' && (
-          <form onSubmit={handleSignIn}>
+                {view === 'signIn' && (
+          <form action="#" onSubmit={handleSignIn}>
             <label className="field">
               <span className="field-label">Email</span>
               <input
@@ -171,6 +171,12 @@ export default function LoginPage() {
                 placeholder="••••••••"
                 autoComplete="current-password"
                 required
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    e.currentTarget.form?.requestSubmit();
+                  }
+                }}
               />
             </label>
             <button type="submit" className="btn login-btn" disabled={busy}>
