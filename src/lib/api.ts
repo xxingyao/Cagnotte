@@ -384,13 +384,11 @@ export interface ApiAsset {
 
 export async function listAssets(): Promise<ApiAsset[]> {
   const json = await request('/me/assets');
-  if (!Array.isArray(json)) throw new Error('Server did not return an assets list.');
+  if (!Array.isArray(json)) throw new Error('Server did not return an asset list.');
   return json as ApiAsset[];
 }
 
-export async function addAsset(
-  input: Omit<ApiAsset, 'assetId' | 'lastUpdated'>,
-): Promise<ApiAsset> {
+export async function addAsset(input: Omit<ApiAsset, 'assetId' | 'lastUpdated'>): Promise<ApiAsset> {
   const json = await request('/me/assets', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -399,10 +397,7 @@ export async function addAsset(
   return json as ApiAsset;
 }
 
-export async function editAsset(
-  assetId: string,
-  input: Omit<ApiAsset, 'assetId' | 'lastUpdated'>,
-): Promise<void> {
+export async function editAsset(assetId: string, input: Omit<ApiAsset, 'assetId' | 'lastUpdated'>): Promise<void> {
   await request(`/me/assets/${encodeURIComponent(assetId)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
