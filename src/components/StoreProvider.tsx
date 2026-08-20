@@ -43,11 +43,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
 
     (async () => {
-      // Handles the ?code= redirect back from the Hosted UI, if that's why
-      // we're here. Harmless on a normal load.
-      await completeLogin();
-      if (cancelled) return;
-
       const signedIn = currentUser();
       setUser(signedIn);
       setData(loadData());
@@ -67,6 +62,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           // broken route for weeks. This is the only trace it left.
           console.warn('Could not refresh groups from the server:', error.message);
         });
+    // Prefetch personal data so sidebar pages load instantly
+    api.listFriends().catch(() => {});
+    api.listInvestments().catch(() => {});
+    api.listAssets().catch(() => {});
     })();
 
     return () => {
