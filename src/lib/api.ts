@@ -275,7 +275,7 @@ export async function uploadAvatar(imageBase64: string, contentType: string): Pr
   });
 }
 
-// ─── Friends (request system) ───────────────────────────────────────────────
+// ─── Friends ────────────────────────────────────────────────────────────────
 
 export async function listFriends(): Promise<Friend[]> {
   const json = await request('/friends');

@@ -44,7 +44,7 @@ export default function SettingsPage() {
 
   function onFileChosen(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
-    event.target.value = ''; // lets picking the same file again re-trigger onChange
+    event.target.value = '';
     if (!file) return;
 
     setError(null);
@@ -60,8 +60,6 @@ export default function SettingsPage() {
 
     const reader = new FileReader();
     reader.onload = async () => {
-      // reader.result is "data:image/png;base64,AAAA..." — only the part
-      // after the comma is the actual base64 payload the server wants.
       const base64 = String(reader.result).split(',')[1];
       setUploading(true);
       try {
