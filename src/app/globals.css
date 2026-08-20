@@ -1540,3 +1540,12 @@ a {
 .link-btn:hover {
   color: var(--brand-hover);
 }
+
+/* Hide sidebar on login page */
+.app-layout:has(.login-page) .sidebar,
+.app-layout:has(.login-page) .mobile-topbar {
+  display: none;
+}
+.app-layout:has(.login-page) .app-main {
+  margin-left: 0;
+}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import * as auth from '@/lib/auth';
@@ -18,6 +18,16 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Already signed in? Go home.
+  useEffect(() => {
+    const user = auth.currentUser();
+    if (user) router.replace('/');
+  }, [router]);
+
+  // Don't render login form if already signed in
+  const user = auth.currentUser();
+  if (user) return null;
 
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault();
@@ -61,7 +71,6 @@ export default function LoginPage() {
     try {
       await auth.confirmSignUp(email, code);
       setMessage(null);
-      // Auto sign-in after confirmation
       await auth.signIn(email, password);
       router.push('/');
     } catch (err) {
@@ -129,7 +138,6 @@ export default function LoginPage() {
         {message && <p className="login-message">{message}</p>}
         {error && <p className="login-error">{error}</p>}
 
-        {/* ── SIGN IN ── */}
         {view === 'signIn' && (
           <form onSubmit={handleSignIn}>
             <label className="field">
@@ -154,7 +162,6 @@ export default function LoginPage() {
           </form>
         )}
 
-        {/* ── SIGN UP ── */}
         {view === 'signUp' && (
           <form onSubmit={handleSignUp}>
             <label className="field">
@@ -180,7 +187,6 @@ export default function LoginPage() {
           </form>
         )}
 
-        {/* ── CONFIRM EMAIL ── */}
         {view === 'confirm' && (
           <form onSubmit={handleConfirm}>
             <label className="field">
@@ -201,7 +207,6 @@ export default function LoginPage() {
           </form>
         )}
 
-        {/* ── FORGOT PASSWORD ── */}
         {view === 'forgot' && (
           <form onSubmit={handleForgot}>
             <label className="field">
@@ -219,7 +224,6 @@ export default function LoginPage() {
           </form>
         )}
 
-        {/* ── RESET PASSWORD CONFIRM ── */}
         {view === 'resetConfirm' && (
           <form onSubmit={handleResetConfirm}>
             <label className="field">
