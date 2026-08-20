@@ -1460,3 +1460,83 @@ a {
   border-color: var(--negative);
   color: var(--negative);
 }
+
+/* ─── Login page ─── */
+.login-page {
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 32px;
+}
+
+.login-header {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.login-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-top: 12px;
+}
+
+.login-sub {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  margin-top: 4px;
+}
+
+.login-message {
+  background: var(--brand-faint);
+  border: 1px solid var(--brand);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size: 0.85rem;
+  margin-bottom: 16px;
+}
+
+.login-error {
+  background: color-mix(in srgb, var(--negative) 8%, transparent);
+  border: 1px solid var(--negative);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  font-size: 0.85rem;
+  color: var(--negative);
+  margin-bottom: 16px;
+}
+
+.login-btn {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.login-links {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 16px;
+  gap: 8px;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--brand);
+  font-size: 0.82rem;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.link-btn:hover {
+  color: var(--brand-hover);
+}

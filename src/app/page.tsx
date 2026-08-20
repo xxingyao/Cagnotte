@@ -24,9 +24,9 @@ export default function DashboardPage() {
             Shared budgets and expense splitting for people abroad together. Sign in to see
             your groups on any device.
           </p>
-          <button type="button" className="btn" onClick={() => login()}>
-            Sign in or create an account
-          </button>
+            <button type="button" className="btn" onClick={() => window.location.assign('/login')}>
+              Sign in or create an account
+            </button>
         </div>
       </main>
     );
