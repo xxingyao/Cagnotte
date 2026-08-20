@@ -1,27 +1,9 @@
-import type { Budget, Expense, Group, Member } from './types';
+import type { Budget, Expense, Friend, Group, Member } from './types';
 import { getIdToken, logout } from './auth';
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE ??
   'https://oxfhpuu8a8.execute-api.us-east-1.amazonaws.com/dev';
-// Add to the top of api.ts
-const cache = new Map<string, { data: unknown; at: number }>();
-const CACHE_TTL = 60_000; // 1 minute
-
-async function cachedRequest(path: string): Promise<unknown> {
-  const hit = cache.get(path);
-  if (hit && Date.now() - hit.at < CACHE_TTL) return hit.data;
-  const data = await request(path);
-  cache.set(path, { data, at: Date.now() });
-  return data;
-}
-
-// Then use it for writes to invalidate:
-function invalidate(prefix: string) {
-  for (const key of cache.keys()) {
-    if (key.startsWith(prefix)) cache.delete(key);
-  }
-}
 
 /** Carries the HTTP status so callers can treat 404 as "absent" not "broken". */
 export class ApiError extends Error {
@@ -302,131 +284,36 @@ export async function uploadAvatar(imageBase64: string, contentType: string): Pr
   });
 }
 
-// ─── Friends ───
+// ─── Friends ────────────────────────────────────────────────────────────────
 
-export interface ApiFriend {
-  friendId: string;
-  name: string;
-  email: string;
-  notes: string;
-  addedAt: string;
+export async function listFriends(): Promise<Friend[]> {
+  const json = await request('/friends');
+  if (!Array.isArray(json)) {
+    throw new Error('Server did not return a friends list.');
+  }
+  return json as Friend[];
 }
 
-export async function listFriends(): Promise<ApiFriend[]> {
-  const json = await cachedRequest('/me/friends');
-  if (!Array.isArray(json)) throw new Error('Server did not return a friend list.');
-  return json as ApiFriend[];
-}
-
-
-export async function addFriend(
-  name: string, email: string, notes: string,
-): Promise<ApiFriend> {
-  const json = await request('/me/friends', {
+export async function sendFriendRequest(email: string): Promise<Friend> {
+  const json = (await request('/friends', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, email, notes }),
-  });
-  invalidate('/me/friends');
-  return json as ApiFriend;
+    body: JSON.stringify({ email }),
+  })) as Friend;
+  return json;
 }
 
-export async function editFriend(
-  friendId: string, name: string, email: string, notes: string,
+export async function respondFriendRequest(
+  friendId: string,
+  action: 'accept' | 'decline',
 ): Promise<void> {
-  await request(`/me/friends/${encodeURIComponent(friendId)}`, {
+  await request(`/friends/${encodeURIComponent(friendId)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, email, notes }),
+    body: JSON.stringify({ action }),
   });
 }
 
-export async function deleteFriend(friendId: string): Promise<void> {
-  await request(`/me/friends/${encodeURIComponent(friendId)}`, { method: 'DELETE' });
-}
-
-// ─── Investments ───
-
-export interface ApiInvestment {
-  investmentId: string;
-  name: string;
-  type: string;
-  icon: string;
-  shares: number;
-  costBasis: number;
-  currentValue: number;
-  updatedAt: string;
-}
-
-export async function listInvestments(): Promise<ApiInvestment[]> {
-  const json = await cachedRequest('/me/investments');
-  if (!Array.isArray(json)) throw new Error('Server did not return an investment list.');
-  return json as ApiInvestment[];
-}
-
-export async function addInvestment(
-  input: Omit<ApiInvestment, 'investmentId' | 'updatedAt'>,
-): Promise<ApiInvestment> {
-  const json = await request('/me/investments', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  });
-  invalidate('/me/investments');
-  return json as ApiInvestment;
-}
-
-export async function editInvestment(
-  investmentId: string,
-  input: Omit<ApiInvestment, 'investmentId' | 'updatedAt'>,
-): Promise<void> {
-  await request(`/me/investments/${encodeURIComponent(investmentId)}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  });
-}
-
-export async function deleteInvestment(investmentId: string): Promise<void> {
-  await request(`/me/investments/${encodeURIComponent(investmentId)}`, { method: 'DELETE' });
-}
-
-// ─── Assets ───
-
-export interface ApiAsset {
-  assetId: string;
-  name: string;
-  category: string;
-  icon: string;
-  value: number;
-  notes: string;
-  lastUpdated: string;
-}
-
-export async function listAssets(): Promise<ApiAsset[]> {
-  const json = await cachedRequest('/me/assets');
-  if (!Array.isArray(json)) throw new Error('Server did not return an asset list.');
-  return json as ApiAsset[];
-}
-
-export async function addAsset(input: Omit<ApiAsset, 'assetId' | 'lastUpdated'>): Promise<ApiAsset> {
-  const json = await request('/me/assets', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  });
-  invalidate('/me/assets');
-  return json as ApiAsset;
-}
-
-export async function editAsset(assetId: string, input: Omit<ApiAsset, 'assetId' | 'lastUpdated'>): Promise<void> {
-  await request(`/me/assets/${encodeURIComponent(assetId)}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  });
-}
-
-export async function deleteAsset(assetId: string): Promise<void> {
-  await request(`/me/assets/${encodeURIComponent(assetId)}`, { method: 'DELETE' });
+export async function removeFriend(friendId: string): Promise<void> {
+  await request(`/friends/${encodeURIComponent(friendId)}`, { method: 'DELETE' });
 }

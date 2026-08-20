@@ -41,6 +41,14 @@ export interface Budget {
   limitMinor: number;
 }
 
+export interface Friend {
+  friendId: string;
+  friendEmail: string;
+  friendName: string;
+  status: 'pending' | 'sent' | 'accepted';
+  createdAt: number;
+}
+
 export interface AppData {
   version: 1;
   groups: Group[];

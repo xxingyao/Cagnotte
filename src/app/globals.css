@@ -1656,3 +1656,117 @@ a {
 .shell:has(.login-page) .signed-out-topbar {
   display: none;
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   FRIENDS
+═══════════════════════════════════════════════════════════════ */
+
+.friend-add-form {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.friend-add-form .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.friend-message {
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-size: 13.5px;
+  margin-top: 10px;
+  margin-bottom: 0;
+}
+
+.friend-message-success {
+  background: var(--positive-soft);
+  color: var(--positive);
+}
+
+.friend-message-error {
+  background: var(--negative-soft);
+  color: var(--negative);
+}
+
+.friend-section {
+  margin-top: 18px;
+}
+
+.friend-section-title {
+  font-size: 12.5px;
+  font-weight: 620;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin: 0 0 8px;
+}
+
+.friend-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.friend-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.friend-row:first-child {
+  border-top: none;
+}
+
+.friend-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.friend-name {
+  font-weight: 560;
+  font-size: 14px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.friend-email {
+  font-size: 12.5px;
+  color: var(--ink-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.friend-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 480px) {
+  .friend-add-form {
+    flex-direction: column;
+  }
+
+  .friend-add-form .btn {
+    width: 100%;
+  }
+
+  .friend-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .friend-actions {
+    align-self: flex-end;
+  }
+}
