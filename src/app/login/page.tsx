@@ -30,24 +30,24 @@ export default function LoginPage() {
   if (user) return null;
 
   async function handleSignIn(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setBusy(true);
-    try {
-      await auth.signIn(email, password);
-      router.push('/');
-    } catch (err) {
-      const error = err as Error & { code?: string };
-      if (error.code === 'UserNotConfirmedException') {
-        setView('confirm');
-        setMessage('Please confirm your email first.');
-      } else {
-        setError(error.message);
+      e.preventDefault();
+      setError(null);
+      setBusy(true);
+      try {
+        await auth.signIn(email, password);
+        window.location.href = '/';
+      } catch (err) {
+        const error = err as Error & { code?: string };
+        if (error.code === 'UserNotConfirmedException') {
+          setView('confirm');
+          setMessage('Please confirm your email first.');
+        } else {
+          setError(error.message);
+        }
+      } finally {
+        setBusy(false);
       }
-    } finally {
-      setBusy(false);
     }
-  }
 
   async function handleSignUp(e: React.FormEvent) {
     e.preventDefault();
@@ -139,7 +139,7 @@ export default function LoginPage() {
         {error && <p className="login-error">{error}</p>}
 
         {view === 'signIn' && (
-          <form onSubmit={handleSignIn}>
+          <form onSubmit={handleSignIn} onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.requestSubmit(); }}>
             <label className="field">
               <span className="field-label">Email</span>
               <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required autoComplete="email" />
