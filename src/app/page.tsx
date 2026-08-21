@@ -55,10 +55,6 @@ export default function DashboardPage() {
   }
 
   useEffect(() => {
-    if (ready && !user) window.location.href = '/login';
-  }, [ready, user]);
-
-  useEffect(() => {
     if (ready) setCats(loadCats());
   }, [ready]);
 
