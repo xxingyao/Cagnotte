@@ -7,8 +7,21 @@ import type { Friend } from '@/lib/types';
 
 export default function FriendsPage() {
   const { data, userId } = useStore();
-  const [friends, setFriends] = useState<Friend[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [friends, setFriends] = useState<Friend[]>(() => {
+    try {
+      const cached = localStorage.getItem('cagnotte-friends');
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [loading, setLoading] = useState(() => {
+    try {
+      return !localStorage.getItem('cagnotte-friends');
+    } catch {
+      return true;
+    }
+  });
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [email, setEmail] = useState('');
@@ -18,7 +31,10 @@ export default function FriendsPage() {
   useEffect(() => {
     api
       .listFriends()
-      .then(setFriends)
+      .then((list) => {
+        setFriends(list);
+        try { localStorage.setItem('cagnotte-friends', JSON.stringify(list)); } catch {}
+      })
       .catch((e) => setError((e as Error).message))
       .finally(() => setLoading(false));
   }, []);
