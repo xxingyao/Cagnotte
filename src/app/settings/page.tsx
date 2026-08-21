@@ -11,7 +11,7 @@ const THEME_KEY = 'cagnotte:theme';
 const CURRENCY_KEY = 'cagnotte:default-currency';
 const NAME_KEY = 'cagnotte:display-name';
 
-type ThemeChoice = 'system' | 'light' | 'dark';
+type ThemeChoice = 'light' | 'dark';
 
 interface Toast { id: number; message: string; type: 'success' | 'error'; }
 
@@ -20,8 +20,7 @@ function pick<T>(arr: T[]): T {
 }
 
 function applyTheme(t: ThemeChoice) {
-  if (t === 'system') document.documentElement.removeAttribute('data-theme');
-  else document.documentElement.setAttribute('data-theme', t);
+  document.documentElement.setAttribute('data-theme', t);
 }
 
 export default function SettingsPage() {
@@ -33,7 +32,7 @@ export default function SettingsPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const [theme, setTheme] = useState<ThemeChoice>('system');
+  const [theme, setTheme] = useState<ThemeChoice>('light');
   const [defaultCurrency, setDefaultCurrency] = useState('SGD');
   const [displayName, setDisplayName] = useState('');
   const [editingName, setEditingName] = useState(false);
@@ -49,7 +48,10 @@ export default function SettingsPage() {
   useEffect(() => {
     try {
       const t = localStorage.getItem(THEME_KEY) as ThemeChoice | null;
-      if (t) { setTheme(t); applyTheme(t); }
+      if (t) { 
+        setTheme(t); 
+        applyTheme(t); 
+      }
       const c = localStorage.getItem(CURRENCY_KEY);
       if (c) setDefaultCurrency(c);
       const n = localStorage.getItem(NAME_KEY);
@@ -103,11 +105,7 @@ export default function SettingsPage() {
     setTheme(next);
     applyTheme(next);
     try { localStorage.setItem(THEME_KEY, next); } catch {}
-    addToast(
-      next === 'dark'  ? 'Dark mode activated. Welcome to the dark side. 🌙' :
-      next === 'light' ? 'Light mode! Bright and beautiful. ☀️' :
-                         'Following your system now. Smart choice. 🖥️',
-    );
+    addToast(next === 'dark' ? 'Dark mode activated. Welcome to the dark side. 🌙' : 'Light mode! Bright and beautiful. ☀️');
   }
 
   function changeCurrency(c: string) {
@@ -226,29 +224,23 @@ export default function SettingsPage() {
         </p>
       </div>
 
-      {/* ── Theme ── */}
-      <div className="card" style={{ marginBottom: 16 }}>
+      {/* ── Theme toggle ── */}
+      <div className="card">
         <div className="card-head">
           <h2 className="card-title">Theme</h2>
         </div>
         <div className="theme-toggle">
-          {([
-            { key: 'light' as ThemeChoice, label: '☀️ Light' },
-            { key: 'dark' as ThemeChoice, label: '🌙 Dark' },
-            { key: 'system' as ThemeChoice, label: '🖥️ System' },
-          ]).map((opt) => (
-            <button key={opt.key} type="button"
-              className={`theme-toggle-btn${theme === opt.key ? ' is-active' : ''}`}
-              onClick={() => changeTheme(opt.key)}>
-              {opt.label}
+          {['Light', 'Dark'].map((name) => (
+            <button
+              key={name}
+              type="button"
+              className={`theme-toggle-btn${theme === name.toLowerCase() ? ' is-active' : ''}`}
+              onClick={() => changeTheme(name.toLowerCase() as ThemeChoice)}
+            >
+              {name === 'Light' ? '☀️' : '🌙'} {name}
             </button>
           ))}
         </div>
-        <p className="split-hint" style={{ marginTop: 8, marginBottom: 0 }}>
-          {theme === 'system' ? 'Follows your device preference.'
-            : theme === 'dark' ? 'Easy on the eyes. 🌙'
-            : 'Bright and clean. ☀️'}
-        </p>
       </div>
     </main>
   );

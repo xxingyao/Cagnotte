@@ -8,13 +8,11 @@ import { useStore } from './StoreProvider';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Your groups', icon: '🏠' },
-  { href: '/friends', label: 'Friends', icon: '👥' },
-  { href: '/investments', label: 'Investments', icon: '📈' },
-  { href: '/assets', label: 'Assets', icon: '🏦' },
   { href: '/settings', label: 'Settings', icon: '⚙️' },
 ];
 
 const COLLAPSE_KEY = 'cagnotte:sidebar-collapsed';
+const NAME_KEY = 'cagnotte:display-name';
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -22,12 +20,21 @@ export function Sidebar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [displayName, setDisplayName] = useState('');
   const accountRef = useRef<HTMLDivElement>(null);
 
+  // Read the saved preference after mount only — doing it during the initial
+  // render would make the server-rendered markup (which knows nothing of
+  // localStorage) disagree with the client's first render and trigger a
+  // hydration warning. Desktop-only anyway; CSS never applies this on mobile.
   useEffect(() => {
     setCollapsed(localStorage.getItem(COLLAPSE_KEY) === '1');
+    setDisplayName(localStorage.getItem(NAME_KEY) || '');
   }, []);
 
+  // Click anywhere outside the account button/menu closes it, same as any
+  // normal dropdown — without this it only ever closes by clicking the
+  // button again.
   useEffect(() => {
     if (!accountMenuOpen) return;
     function handleClick(event: MouseEvent) {
@@ -47,18 +54,19 @@ export function Sidebar() {
     });
   }
 
+  const shownName = displayName || user?.name || 'Cagnotte';
+
   return (
     <>
+      {/* Mobile-only slim bar with the hamburger — hidden on desktop by CSS. */}
       <div className="mobile-topbar">
         <button
           type="button"
-          className="icon-btn"
+          className="hamburger"
           onClick={() => setMobileOpen(true)}
           aria-label="Open menu"
         >
-          <svg viewBox="0 0 20 20" width="16" height="16" fill="none" aria-hidden="true">
-            <path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-          </svg>
+          <span /><span /><span />
         </button>
         <Link href="/" className="wordmark">
           <Image src="/logo.png" alt="" width={22} height={22} className="wordmark-dot" priority />
@@ -66,6 +74,7 @@ export function Sidebar() {
         </Link>
       </div>
 
+      {/* Only exists on mobile, only while the drawer is open. */}
       {mobileOpen && (
         <div className="sidebar-backdrop" onClick={() => setMobileOpen(false)} />
       )}
@@ -81,33 +90,20 @@ export function Sidebar() {
               onClick={() => setAccountMenuOpen((v) => !v)}
               aria-expanded={accountMenuOpen}
             >
-              <Image
-                src="/logo.png"
-                alt=""
-                width={26}
-                height={26}
-                className="wordmark-dot"
-                priority
-              />
+              <span className="sidebar-account-badge">
+                <Image
+                  src="/logo.png"
+                  alt=""
+                  width={26}
+                  height={26}
+                  className="wordmark-dot"
+                  priority
+                />
+              </span>
               <span className="sidebar-account-text">
-                <span className="sidebar-user-name">
-                  {(() => {
-                    try { return localStorage.getItem('cagnotte:display-name') || user?.name || 'Cagnotte'; }
-                    catch { return user?.name || 'Cagnotte'; }
-                  })()}
-                </span>
+                <span className="sidebar-user-name">{shownName}</span>
               </span>
-              <span className="sidebar-account-chevron" aria-hidden="true">
-                <svg viewBox="0 0 20 20" width="16" height="16" fill="none">
-                  <path
-                    d="M5 7.5 10 12.5 15 7.5"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </span>
+              <span className="sidebar-account-chevron" aria-hidden="true">⌄</span>
             </button>
             {accountMenuOpen && (
               <div className="sidebar-account-menu">
@@ -119,25 +115,20 @@ export function Sidebar() {
                     logout();
                   }}
                 >
-                  <span className="sidebar-menu-icon" aria-hidden="true">
-                    <svg viewBox="0 0 20 20" width="14" height="14" fill="none">
-                      <path d="M7 3H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h3M13 14l4-4-4-4M17 10H7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                    </svg>
-                  </span>
+                  <span className="sidebar-menu-icon" aria-hidden="true">🚪</span>
                   Sign out
                 </button>
               </div>
             )}
           </div>
+          {/* Only visible on mobile via CSS — desktop's sidebar has nothing to close. */}
           <button
             type="button"
-            className="icon-btn sidebar-close"
+            className="sidebar-close"
             onClick={() => setMobileOpen(false)}
             aria-label="Close menu"
           >
-            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" aria-hidden="true">
-              <path d="M5 5l10 10M15 5 5 15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-            </svg>
+            ×
           </button>
         </div>
 
@@ -156,10 +147,12 @@ export function Sidebar() {
           ))}
         </nav>
 
+        {/* Only visible on desktop via CSS — mobile uses the drawer's
+            open/close instead of a collapsed icon rail. */}
         <div className="sidebar-foot">
           <button
             type="button"
-            className="icon-btn sidebar-collapse-toggle"
+            className="sidebar-collapse-toggle"
             onClick={toggleCollapsed}
             aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}

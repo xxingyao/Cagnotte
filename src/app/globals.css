@@ -261,22 +261,31 @@ a {
   gap: 12px;
 }
 
-.group-card {
+/* ── Group card ── */
+.group-card-wrap {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: 8px;
+}
+
+.group-card {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 15px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  padding: 16px 18px;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+  color: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .group-card:hover {
-  border-color: var(--brand);
-  box-shadow: 0 4px 16px rgba(6, 20, 58, 0.08);
-  transform: translateY(-1px);
+  border-color: var(--border-strong);
 }
 
 .group-card-main {
@@ -285,48 +294,43 @@ a {
 }
 
 .group-card-name {
-  font-weight: 600;
-  font-size: 16px;
-  letter-spacing: -0.01em;
+  font-weight: 580;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .group-card-meta {
+  font-size: 12.5px;
   color: var(--ink-muted);
-  font-size: 13px;
-  margin-top: 2px;
-}
-
-/* Group card with menu — dashboard */
-.group-card-wrap {
-  position: relative;
-  list-style: none;
+  margin-top: 1px;
 }
 
 .group-card-menu-wrap {
-  position: absolute;
-  top: 12px;
-  right: 12px;
+  position: relative;
+  flex-shrink: 0;
 }
 
 .group-card-menu-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--radius-sm);
+  width: 32px;
+  height: 32px;
+  padding: 0;
   background: var(--surface-sunken);
   border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
   cursor: pointer;
+  font-size: 17px;
+  line-height: 1;
   color: var(--ink-muted);
-  font-size: 14px;
-  font-weight: 700;
-  letter-spacing: 2px;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
 }
 
 .group-card-menu-btn:hover {
-  background: var(--border);
+  border-color: var(--border-strong);
   color: var(--ink);
 }
 
@@ -334,30 +338,30 @@ a {
   position: absolute;
   top: calc(100% + 4px);
   right: 0;
-  min-width: 180px;
+  min-width: 190px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   box-shadow: 0 8px 24px rgba(6, 20, 58, 0.12);
   padding: 4px;
-  z-index: 10;
+  z-index: 20;
 }
 
 .group-card-dropdown-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   width: 100%;
   padding: 8px 10px;
   background: none;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  color: var(--ink-soft);
   font: inherit;
   font-size: 13.5px;
+  color: var(--ink-soft);
   text-align: left;
-  transition: background 0.12s ease;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
 .group-card-dropdown-item:hover {
@@ -1047,6 +1051,43 @@ a {
   background: var(--surface-sunken);
 }
 
+.sidebar-account-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.sidebar-account:hover .sidebar-account-badge {
+  background: var(--brand-soft);
+  border-color: var(--brand);
+}
+
+.sidebar-collapse-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--ink-muted);
+  transition: border-color 0.15s ease, color 0.15s ease, transform 0.2s ease;
+}
+
+.sidebar-collapse-toggle:hover {
+  border-color: var(--border-strong);
+  color: var(--ink);
+}
+
 .sidebar-account-text {
   display: flex;
   flex-direction: column;
@@ -1193,14 +1234,6 @@ a {
   white-space: nowrap;
 }
 
-.sidebar-user-email {
-  font-size: 12px;
-  color: var(--ink-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .sidebar-close {
   display: none;
 }
@@ -1216,6 +1249,11 @@ a {
 @media (min-width: 769px) {
   .sidebar.is-collapsed {
     width: 72px;
+  }
+  
+  .sidebar.is-collapsed .sidebar-account-badge {
+  width: 34px;
+  height: 34px;
   }
 
   .sidebar.is-collapsed .sidebar-head {
@@ -1690,48 +1728,55 @@ a {
 /* ═════════════════════════════════════════════════════════════════
    DASHBOARD (HOME PAGE)
 ═════════════════════════════════════════════════════════════════ */
-
+/* ── Dashboard tabs ── */
 .dash-tabs {
   display: flex;
   gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
   margin-bottom: 20px;
+}
+
+.dash-tab-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 3px;
 }
 
 .dash-tab {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
-  border: 1.5px solid var(--border-strong);
-  border-radius: var(--radius-pill);
+  gap: 7px;
+  padding: 8px 13px;
   background: var(--surface);
-  color: var(--ink-soft);
-  font: inherit;
-  font-size: 14px;
-  font-weight: 550;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-pill);
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease,
-    box-shadow 0.15s ease;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 550;
+  color: var(--ink-soft);
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
 
 .dash-tab:hover {
-  border-color: var(--ink-muted);
-  background: var(--surface-sunken);
+  border-color: var(--border-strong);
+  color: var(--ink);
 }
 
 .dash-tab.is-active {
   background: var(--brand);
   border-color: var(--brand);
   color: #fff;
-  box-shadow: 0 2px 8px rgba(66, 87, 246, 0.25);
 }
 
 .dash-tab-icon {
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .dash-tab-label {
-  font-size: 13.5px;
+  white-space: nowrap;
 }
 
 .dash-tab-count {
@@ -1741,15 +1786,79 @@ a {
   min-width: 20px;
   height: 20px;
   padding: 0 6px;
+  background: var(--surface-sunken);
   border-radius: var(--radius-pill);
-  background: rgba(255, 255, 255, 0.2);
   font-size: 11.5px;
-  font-weight: 650;
+  font-weight: 620;
+  font-variant-numeric: tabular-nums;
 }
 
-.dash-tab:not(.is-active) .dash-tab-count {
+.dash-tab.is-active .dash-tab-count {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+.dash-tab-controls {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.dash-tab-item:hover .dash-tab-controls,
+.dash-tab-item:focus-within .dash-tab-controls {
+  opacity: 1;
+}
+
+.dash-tab-control-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
   background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+  line-height: 1;
   color: var(--ink-muted);
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.dash-tab-control-btn:hover {
+  border-color: var(--border-strong);
+  color: var(--ink);
+}
+
+.dash-tab-control-btn.dash-tab-delete:hover {
+  border-color: var(--negative);
+  color: var(--negative);
+}
+
+.dash-tab-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  background: none;
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  font: inherit;
+  font-size: 17px;
+  line-height: 1;
+  color: var(--ink-muted);
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.dash-tab-add:hover {
+  border-color: var(--brand);
+  color: var(--brand);
 }
 
 .dash-empty {
