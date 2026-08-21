@@ -4,9 +4,21 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { useStore } from './StoreProvider';
 import { Sidebar } from './Sidebar';
+import { useEffect } from 'react';
+
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, ready } = useStore();
+  // Apply saved theme preference on mount (before first paint would be ideal,
+  // but a useEffect is close enough — the flash is barely visible).
+  useEffect(() => {
+    try {
+      const theme = localStorage.getItem('cagnotte:theme');
+      if (theme === 'dark' || theme === 'light') {
+        document.documentElement.setAttribute('data-theme', theme);
+      }
+    } catch {}
+  }, []);
 
   // Not signed in (or still loading): no nav — there's nothing to navigate to
   // yet. Just the wordmark above whatever the page itself renders (the

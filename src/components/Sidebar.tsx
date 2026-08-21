@@ -90,8 +90,12 @@ export function Sidebar() {
                 priority
               />
               <span className="sidebar-account-text">
-                <span className="sidebar-user-name">{user?.name || 'Cagnotte'}</span>
-                <span className="sidebar-user-email">{user?.email}</span>
+                <span className="sidebar-user-name">
+                  {(() => {
+                    try { return localStorage.getItem('cagnotte:display-name') || user?.name || 'Cagnotte'; }
+                    catch { return user?.name || 'Cagnotte'; }
+                  })()}
+                </span>
               </span>
               <span className="sidebar-account-chevron" aria-hidden="true">
                 <svg viewBox="0 0 20 20" width="16" height="16" fill="none">
