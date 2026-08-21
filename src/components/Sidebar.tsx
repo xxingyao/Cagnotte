@@ -8,6 +8,9 @@ import { useStore } from './StoreProvider';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Your groups', icon: '🏠' },
+  { href: '/friends', label: 'Friends', icon: '👥' },
+  { href: '/investments', label: 'Investments', icon: '📈' },
+  { href: '/assets', label: 'Assets', icon: '🏦' },
   { href: '/settings', label: 'Settings', icon: '⚙️' },
 ];
 
