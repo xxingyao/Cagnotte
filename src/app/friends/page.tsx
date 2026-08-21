@@ -14,9 +14,82 @@ interface Toast {
 interface ConfirmState {
   message: string;
   action: () => Promise<void>;
+  label?: string;
 }
 
 let toastId = 0;
+
+function pick<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+// ─── Fun messages ────────────────────────────────────────────────────────────
+
+const CONFIRM_REMOVE = (n: string) => pick([
+  `Are you sure you wanna break ${n}'s heart? 💔`,
+  `Really? ${n} thought you two had something special…`,
+  `${n} is going to cry in the shower tonight. Proceed?`,
+  `Unfriending ${n}? That's cold. Are you sure?`,
+  `${n} just felt a chill down their spine. Remove anyway?`,
+]);
+
+const CONFIRM_DECLINE = (n: string) => pick([
+  `Reject ${n}? They spent ages crafting that request…`,
+  `Leave ${n} on read? That's savage.`,
+  `Not feeling the vibe? Decline ${n}'s request?`,
+  `Ouch. Turn down ${n}? Are you sure?`,
+  `${n} is refreshing their phone right now. Decline anyway?`,
+]);
+
+const CONFIRM_CANCEL = (n: string) => pick([
+  `Take it back before ${n} sees? Smart move.`,
+  `Changed your mind about ${n}? No judgment.`,
+  `Abort mission? Cancel request to ${n}?`,
+  `Got cold feet? Cancel the request to ${n}?`,
+  `Pull the plug on ${n}'s invite?`,
+]);
+
+const TOAST_REMOVED = (n: string) => pick([
+  `${n} has been yeeted from your friends list.`,
+  `Goodbye ${n}. It was nice while it lasted.`,
+  `${n} removed. You monster. 🥶`,
+  `It's done. ${n} is no more (as a friend).`,
+  `Poof. ${n} is gone. 💨`,
+]);
+
+const TOAST_DECLINED = (n: string) => pick([
+  `Request from ${n} declined. Brutal.`,
+  `Nope'd ${n}'s request. 🙅`,
+  `${n}'s request has been sent to the shadow realm.`,
+  `${n}? Never heard of them.`,
+  `Request declined. ${n} will recover… probably.`,
+]);
+
+const TOAST_CANCELLED = (n: string) => pick([
+  `Request to ${n} cancelled. They'll never know. 🤫`,
+  `Aborted! ${n} won't see a thing.`,
+  `Changed your mind. No harm done.`,
+  `Request pulled. ${n} remains blissfully unaware.`,
+  `Mission aborted. ${n} dodged your friendship.`,
+]);
+
+const TOAST_ACCEPTED = (n: string) => pick([
+  `You and ${n} are now besties! 🎉`,
+  `${n} is officially your friend! Time to split some bills.`,
+  `Friendship unlocked with ${n}! 🔓`,
+  `Welcome ${n} to the squad! 🤝`,
+  `${n} accepted! The beginning of a beautiful friendship.`,
+]);
+
+const TOAST_SENT = (n: string) => pick([
+  `Friend request sent to ${n}! 🚀`,
+  `Request fired off to ${n}! Now we wait…`,
+  `Sliding into ${n}'s friend requests… ✉️`,
+  `${n} has a pending request from you!`,
+  `Request sent! Ball's in ${n}'s court now.`,
+]);
+
+// ─── Component ───────────────────────────────────────────────────────────────
 
 export default function FriendsPage() {
   const { data, userId } = useStore();
@@ -54,7 +127,6 @@ export default function FriendsPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Clean up toast timers on unmount
   useEffect(() => {
     const timers = toastTimers.current;
     return () => { timers.forEach((t) => clearTimeout(t)); };
@@ -70,8 +142,8 @@ export default function FriendsPage() {
     toastTimers.current.set(id, timer);
   }
 
-  function askConfirm(message: string, action: () => Promise<void>) {
-    setConfirm({ message, action });
+  function askConfirm(message: string, action: () => Promise<void>, label?: string) {
+    setConfirm({ message, action, label });
   }
 
   async function runConfirm() {
@@ -135,7 +207,7 @@ export default function FriendsPage() {
       setFriends(updated);
       updateCache(updated);
       setEmail('');
-      showToast('success', `Friend request sent to ${friend.friendEmail}!`);
+      showToast('success', TOAST_SENT(friend.friendName || friend.friendEmail));
     } catch (err) {
       showToast('error', (err as Error).message);
     } finally {
@@ -151,43 +223,43 @@ export default function FriendsPage() {
       );
       setFriends(updated);
       updateCache(updated);
-      showToast('success', `You and ${name} are now friends!`);
+      showToast('success', TOAST_ACCEPTED(name));
     } catch (err) {
       showToast('error', (err as Error).message);
     }
   }
 
-  async function declineFriend(friendId: string) {
+  async function declineFriend(friendId: string, name: string) {
     try {
       await api.respondFriendRequest(friendId, 'decline');
       const updated = friends.filter((f) => f.friendId !== friendId);
       setFriends(updated);
       updateCache(updated);
-      showToast('success', 'Request declined.');
+      showToast('error', TOAST_DECLINED(name));
     } catch (err) {
       showToast('error', (err as Error).message);
     }
   }
 
-  async function cancelSent(friendId: string) {
+  async function cancelSent(friendId: string, name: string) {
     try {
       await api.removeFriend(friendId);
       const updated = friends.filter((f) => f.friendId !== friendId);
       setFriends(updated);
       updateCache(updated);
-      showToast('success', 'Request cancelled.');
+      showToast('error', TOAST_CANCELLED(name));
     } catch (err) {
       showToast('error', (err as Error).message);
     }
   }
 
-  async function remove(friendId: string) {
+  async function removeFriend(friendId: string, name: string) {
     try {
       await api.removeFriend(friendId);
       const updated = friends.filter((f) => f.friendId !== friendId);
       setFriends(updated);
       updateCache(updated);
-      showToast('success', 'Friend removed.');
+      showToast('error', TOAST_REMOVED(name));
     } catch (err) {
       showToast('error', (err as Error).message);
     }
@@ -212,7 +284,7 @@ export default function FriendsPage() {
         <div className="modal-backdrop" onClick={() => !confirming && setConfirm(null)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
             <div className="modal-head">
-              <h2 className="modal-title">Are you sure?</h2>
+              <h2 className="modal-title">Hold up…</h2>
               <button
                 type="button"
                 className="modal-close"
@@ -231,7 +303,7 @@ export default function FriendsPage() {
                 onClick={() => setConfirm(null)}
                 disabled={confirming}
               >
-                Cancel
+                Nah, keep them
               </button>
               <button
                 type="button"
@@ -239,7 +311,7 @@ export default function FriendsPage() {
                 onClick={runConfirm}
                 disabled={confirming}
               >
-                {confirming ? 'Removing…' : 'Yes, remove'}
+                {confirming ? 'Doing it…' : (confirm.label || 'Do it')}
               </button>
             </div>
           </div>
@@ -266,7 +338,6 @@ export default function FriendsPage() {
         </div>
       </div>
 
-      {/* Add friend by email */}
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-head">
           <h2 className="card-title">Add friend</h2>
@@ -286,7 +357,6 @@ export default function FriendsPage() {
         </form>
       </div>
 
-      {/* Pending requests */}
       {pendingRequests.length > 0 && (
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="card-head">
@@ -322,8 +392,9 @@ export default function FriendsPage() {
                       style={{ width: 'auto', padding: '6px 14px', fontSize: 13 }}
                       onClick={() =>
                         askConfirm(
-                          `Decline the friend request from ${f.friendName}?`,
-                          () => declineFriend(f.friendId),
+                          CONFIRM_DECLINE(f.friendName),
+                          () => declineFriend(f.friendId, f.friendName),
+                          'Decline',
                         )
                       }
                     >
@@ -337,7 +408,6 @@ export default function FriendsPage() {
         </div>
       )}
 
-      {/* Sent requests */}
       {sentRequests.length > 0 && (
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="card-head">
@@ -364,8 +434,9 @@ export default function FriendsPage() {
                     style={{ width: 'auto', padding: '6px 14px', fontSize: 13 }}
                     onClick={() =>
                       askConfirm(
-                        `Cancel the friend request to ${f.friendName}?`,
-                        () => cancelSent(f.friendId),
+                        CONFIRM_CANCEL(f.friendName),
+                        () => cancelSent(f.friendId, f.friendName),
+                        'Cancel it',
                       )
                     }
                   >
@@ -378,7 +449,6 @@ export default function FriendsPage() {
         </div>
       )}
 
-      {/* Accepted friends */}
       <div className="tracking-table-wrap">
         <div className="tracking-table-head">
           <h2 className="tracking-table-title">Your friends</h2>
@@ -461,8 +531,9 @@ export default function FriendsPage() {
                             className="icon-btn icon-btn-sm is-danger"
                             onClick={() =>
                               askConfirm(
-                                `Remove ${friend.friendName} from your friends?`,
-                                () => remove(friend.friendId),
+                                CONFIRM_REMOVE(friend.friendName),
+                                () => removeFriend(friend.friendId, friend.friendName),
+                                'Remove them',
                               )
                             }
                             title="Remove"
