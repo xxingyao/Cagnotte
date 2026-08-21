@@ -70,6 +70,13 @@ export default function DashboardPage() {
     return () => document.removeEventListener('mousedown', close);
   }, [menuOpen]);
 
+  useEffect(() => {
+  if (ready && !user) {
+    // Only redirect if we're absolutely sure user is not authenticated
+    window.location.href = '/login';
+  }
+  }, [ready, user]);
+
   if (!ready) return <p className="sub">Loading…</p>;
   if (!user) return null;
 
