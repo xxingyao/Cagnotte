@@ -24,7 +24,7 @@ function applyTheme(t: ThemeChoice) {
 }
 
 export default function SettingsPage() {
-  const { user, ready, userId } = useStore();
+  const { user, ready, userId, logout } = useStore();
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -37,6 +37,7 @@ export default function SettingsPage() {
   const [displayName, setDisplayName] = useState('');
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
+  
 
   function addToast(msg: string, type: 'success' | 'error' = 'success') {
     const id = Date.now();
@@ -225,7 +226,7 @@ export default function SettingsPage() {
       </div>
 
       {/* ── Theme toggle ── */}
-      <div className="card">
+      <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-head">
           <h2 className="card-title">Theme</h2>
         </div>
@@ -241,6 +242,19 @@ export default function SettingsPage() {
             </button>
           ))}
         </div>
+      </div>
+      {/* ── Sign out ── */}
+      <div className="card">
+        <div className="card-head">
+          <h2 className="card-title">Account</h2>
+        </div>
+        <button type="button" className="btn-signout" onClick={logout}>
+          <span aria-hidden="true">🚪</span>
+          Sign out
+        </button>
+        <p className="split-hint" style={{ marginTop: 10, marginBottom: 0 }}>
+          You&apos;ll need to sign in again to get back to your groups.
+        </p>
       </div>
     </main>
   );

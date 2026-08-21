@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore } from './StoreProvider';
 
 const NAV_ITEMS = [
@@ -19,14 +19,12 @@ const NAME_KEY = 'cagnotte:display-name';
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { user, logout } = useStore();
+  const { user } = useStore();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
-  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [displayName, setDisplayName] = useState('');
-  const accountRef = useRef<HTMLDivElement>(null);
 
-  // Read the saved preference after mount only — doing it during the initial
+  // Read the saved preferences after mount only — doing it during the initial
   // render would make the server-rendered markup (which knows nothing of
   // localStorage) disagree with the client's first render and trigger a
   // hydration warning. Desktop-only anyway; CSS never applies this on mobile.
@@ -34,20 +32,6 @@ export function Sidebar() {
     setCollapsed(localStorage.getItem(COLLAPSE_KEY) === '1');
     setDisplayName(localStorage.getItem(NAME_KEY) || '');
   }, []);
-
-  // Click anywhere outside the account button/menu closes it, same as any
-  // normal dropdown — without this it only ever closes by clicking the
-  // button again.
-  useEffect(() => {
-    if (!accountMenuOpen) return;
-    function handleClick(event: MouseEvent) {
-      if (accountRef.current && !accountRef.current.contains(event.target as Node)) {
-        setAccountMenuOpen(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [accountMenuOpen]);
 
   function toggleCollapsed() {
     setCollapsed((current) => {
@@ -86,43 +70,20 @@ export function Sidebar() {
         className={`sidebar${mobileOpen ? ' is-open' : ''}${collapsed ? ' is-collapsed' : ''}`}
       >
         <div className="sidebar-head">
-          <div className="sidebar-account-wrap" ref={accountRef}>
-            <button
-              type="button"
-              className="sidebar-account"
-              onClick={() => setAccountMenuOpen((v) => !v)}
-              aria-expanded={accountMenuOpen}
-            >
-              <span className="sidebar-account-badge">
-                <Image
-                  src="/logo.png"
-                  alt=""
-                  width={26}
-                  height={26}
-                  className="wordmark-dot"
-                  priority
-                />
-              </span>
-              <span className="sidebar-account-text">
-                <span className="sidebar-user-name">{shownName}</span>
-              </span>
-              <span className="sidebar-account-chevron" aria-hidden="true">⌄</span>
-            </button>
-            {accountMenuOpen && (
-              <div className="sidebar-account-menu">
-                <button
-                  type="button"
-                  className="sidebar-account-menu-item"
-                  onClick={() => {
-                    setAccountMenuOpen(false);
-                    logout();
-                  }}
-                >
-                  <span className="sidebar-menu-icon" aria-hidden="true">🚪</span>
-                  Sign out
-                </button>
-              </div>
-            )}
+          <div className="sidebar-account">
+            <span className="sidebar-account-badge">
+              <Image
+                src="/logo.png"
+                alt=""
+                width={26}
+                height={26}
+                className="wordmark-dot"
+                priority
+              />
+            </span>
+            <span className="sidebar-account-text">
+              <span className="sidebar-user-name">{shownName}</span>
+            </span>
           </div>
           {/* Only visible on mobile via CSS — desktop's sidebar has nothing to close. */}
           <button
