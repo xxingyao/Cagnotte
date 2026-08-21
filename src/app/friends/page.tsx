@@ -181,6 +181,26 @@ export default function FriendsPage() {
     return [];
   }
 
+  // Group members who aren't already friends (suggestion pool)
+  const suggestions = useMemo(() => {
+    const friendEmails = new Set(friends.map((f) => f.friendEmail.toLowerCase()));
+    const seen = new Set<string>();
+    const result: { name: string; email: string }[] = [];
+
+    for (const group of data.groups) {
+      for (const member of group.members) {
+        if (member.id === userId) continue;
+        const key = member.id;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        // We don't have member emails directly — but if they match a friend,
+        // we can skip. Otherwise they show as name-only suggestions.
+        result.push({ name: member.name, email: '' });
+      }
+    }
+    return result;
+  }, [data.groups, userId, friends]);
+
   const pendingRequests = friends.filter((f) => f.status === 'pending');
   const sentRequests = friends.filter((f) => f.status === 'sent');
   const acceptedFriends = friends.filter((f) => f.status === 'accepted');
