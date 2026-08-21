@@ -5,11 +5,12 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useStore } from '@/components/StoreProvider';
 import { Modal } from '@/components/Modal';
-import { ConfirmModal } from '@/components/ConfirmModal';
 import { CATEGORIES, CATEGORY_EMOJI, CURRENCIES } from '@/lib/options';
 import { formatMoney, minorToAmountString, parseAmountToMinor } from '@/lib/money';
 import { baseCurrencyAmount, computeBalances, computeSettlements, type Balance, type Settlement } from '@/lib/balances';
 import type { Expense, Member } from '@/lib/types';
+
+const SETTLEMENT_CATEGORY = 'Settlement';
 
 interface Toast {
   id: number;
@@ -28,8 +29,6 @@ function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-const SETTLEMENT_CATEGORY = 'Settlement';
-
 export default function GroupPage() {
   const params = useParams<{ groupId: string }>();
   const router = useRouter();
@@ -39,6 +38,8 @@ export default function GroupPage() {
   } = useStore();
   const [syncError, setSyncError] = useState<string | null>(null);
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
+  const [editingGroupName, setEditingGroupName] = useState(false);
+  const [settlingKey, setSettlingKey] = useState<string | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
@@ -47,8 +48,6 @@ export default function GroupPage() {
     setToasts((t) => [...t, { id, message, type }]);
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4000);
   }
-  const [editingGroupName, setEditingGroupName] = useState(false);
-  const [settlingKey, setSettlingKey] = useState<string | null>(null);
 
   const groupId = params.groupId;
 
@@ -96,15 +95,6 @@ export default function GroupPage() {
   if (!group) {
     return (
       <main>
-        {/* ── Toasts ── */}
-        <div className="toast-container">
-          {toasts.map((t) => (
-            <div key={t.id} className={`toast ${t.type === 'error' ? 'toast-error' : 'toast-success'}`}>
-              <span className="toast-icon">{t.type === 'error' ? '🔴' : '🟢'}</span>
-              {t.message}
-            </div>
-          ))}
-        </div>
         <p className="empty">That group doesn&apos;t exist on this device.</p>
         <Link href="/" className="back-btn">
           <svg viewBox="0 0 20 20" width="14" height="14" fill="none" aria-hidden="true">
@@ -135,6 +125,16 @@ export default function GroupPage() {
 
   return (
     <main>
+      {/* ── Toasts ── */}
+      <div className="toast-container">
+        {toasts.map((t) => (
+          <div key={t.id} className={`toast ${t.type === 'error' ? 'toast-error' : 'toast-success'}`}>
+            <span className="toast-icon">{t.type === 'error' ? '🔴' : '🟢'}</span>
+            {t.message}
+          </div>
+        ))}
+      </div>
+
       <Link href="/" className="back-btn">
         <svg viewBox="0 0 20 20" width="14" height="14" fill="none" aria-hidden="true">
           <path d="M13 16 7 10l6-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
@@ -179,7 +179,8 @@ export default function GroupPage() {
               addToast(pick([
                 'Budget set! Let\'s see how long that lasts. 😅',
                 'Budget saved! Your future self thanks you. 🙏',
-                'Limit locked in! The challenge begins.',
+                'Limit locked in! The challenge begins. 💪',
+                'Budget updated! Now try sticking to it. 😏',
               ]));
             } catch (error) {
               addToast((error as Error).message, 'error');
@@ -214,7 +215,8 @@ export default function GroupPage() {
               addToast(pick([
                 'Updated! The numbers have been corrected. ✏️',
                 'Saved! History has been rewritten. Legally.',
-                'Changes saved! Accountants love you.',
+                'Changes saved! Accountants love you. 📋',
+                'Expense updated! The records have been amended.',
               ]));
             } catch (error) {
               addToast((error as Error).message, 'error');
@@ -251,7 +253,8 @@ export default function GroupPage() {
               addToast(pick([
                 'Settlement recorded! One less debt in the world. 🤝',
                 'Marked as paid! Friendship preserved. 💪',
-                'Settled! The financial gods are pleased.',
+                'Settled! The financial gods are pleased. ⚖️',
+                'Debt cleared! High five through the screen. 🖐️',
               ]));
             } catch (error) {
               addToast((error as Error).message, 'error');
@@ -337,30 +340,30 @@ export default function GroupPage() {
                           aria-label={`Delete ${expense.description}`}
                           title="Delete"
                           onClick={() => {
-                          setConfirm({
-                            title: 'Delete expense',
-                            message: pick([
-                              `"${expense.description}" is about to be wiped from existence. No undo button here.`,
-                              `Poof — "${expense.description}" will vanish. Like your last paycheck on a Friday night.`,
-                              `"${expense.description}" wants to live! Too bad you're heartless.`,
-                              `Deleting "${expense.description}" won't bring your money back, you know.`,
-                            ]),
-                            confirmLabel: 'Delete it',
-                            onYes: async () => {
-                              setConfirm(null);
-                              try {
-                                await deleteExpense(group.id, expense.id);
-                                addToast(pick([
-                                  'Deleted! The evidence has been destroyed. 🔥',
-                                  'Expense erased! What expense? 👀',
-                                  'Gone. Poof. Like it never happened.',
-                                ]), 'error');
-                              } catch (error) {
-                                addToast((error as Error).message, 'error');
-                              }
-                            },
-                          });
-                        }}
+                            setConfirm({
+                              title: 'Delete expense',
+                              message: pick([
+                                `"${expense.description}" is about to be wiped from existence. No undo button here.`,
+                                `Poof — "${expense.description}" will vanish. Like your last paycheck on a Friday night.`,
+                                `"${expense.description}" wants to live! Too bad you're heartless.`,
+                                `Deleting "${expense.description}" won't bring your money back, you know.`,
+                              ]),
+                              confirmLabel: 'Delete it',
+                              onYes: async () => {
+                                setConfirm(null);
+                                try {
+                                  await deleteExpense(group.id, expense.id);
+                                  addToast(pick([
+                                    'Deleted! The evidence has been destroyed. 🔥',
+                                    'Expense erased! What expense? 👀',
+                                    'Gone. Poof. Like it never happened.',
+                                  ]), 'error');
+                                } catch (error) {
+                                  addToast((error as Error).message, 'error');
+                                }
+                              },
+                            });
+                          }}
                         >
                           <svg viewBox="0 0 20 20" width="12" height="12" fill="none" aria-hidden="true">
                             <path d="M5 5l10 10M15 5 5 15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
@@ -386,7 +389,7 @@ export default function GroupPage() {
                   `"${group.name}" and ALL its expenses will be vaporized. Everyone loses everything. Like Thanos, but for budgets. 💀`,
                   `Nuclear option activated. "${group.name}" goes boom for EVERYONE. Are you absolutely sure?`,
                   `You're about to delete "${group.name}" for ALL members. There's no "oops" button after this.`,
-                  `This will nuke "${group.name}" from orbit. It's the only way to be sure… right?`,
+                  `This will nuke "${group.name}" from orbit. It's the only way to be sure… right? ☢️`,
                 ]),
                 confirmLabel: 'Delete group',
                 onYes: async () => {
@@ -440,8 +443,9 @@ export default function GroupPage() {
             setEditingGroupName(false);
             addToast(pick([
               'Renamed! Fresh identity, same debts. 😄',
-              'Group renamed! Witness protection program complete.',
+              'Group renamed! Witness protection program complete. 🕵️',
               'New name, who dis? 🏷️',
+              'Renamed! The group has been rebranded.',
             ]));
           } catch (error) {
             addToast((error as Error).message, 'error');
@@ -453,6 +457,10 @@ export default function GroupPage() {
     </main>
   );
 }
+
+/* ────────────────────────────────────────────────────────────────────────────
+   Child components below are UNCHANGED from the original
+   ──────────────────────────────────────────────────────────────────────────── */
 
 function BalancesCard({
   balances, currency, excludedCount, youId,
