@@ -13,6 +13,17 @@ interface Asset {
   lastUpdated: string;
 }
 
+interface Toast {
+  id: number;
+  message: string;
+  type: 'success' | 'error';
+}
+
+interface ConfirmState {
+  message: string;
+  onYes: () => void;
+}
+
 const ASSET_CATEGORIES = [
   { value: 'property', label: 'Real Estate', icon: '🏡' },
   { value: 'vehicle', label: 'Vehicle', icon: '🚗' },
@@ -24,6 +35,10 @@ const ASSET_CATEGORIES = [
 
 function fmt(n: number) {
   return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function pick<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
 }
 
 function fromWire(w: api.ApiAsset): Asset {
@@ -45,11 +60,19 @@ export default function AssetsPage() {
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
   const [name, setName] = useState('');
   const [category, setCategory] = useState('property');
   const [value, setValue] = useState('');
   const [notes, setNotes] = useState('');
+
+  function addToast(message: string, type: 'success' | 'error' = 'success') {
+    const id = Date.now();
+    setToasts((t) => [...t, { id, message, type }]);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4000);
+  }
 
   useEffect(() => {
     api.listAssets()
@@ -105,32 +128,67 @@ export default function AssetsPage() {
               : a,
           ),
         );
+        addToast(pick([
+          'Updated! Your net worth just shifted. 📋',
+          'Saved! The accountants are taking notes.',
+          'Changes saved! Your assets appreciate it. Get it? 😏',
+        ]));
       } else {
         const created = await api.addAsset(input);
         setItems((prev) => [...prev, fromWire(created)]);
+        addToast(pick([
+          'Asset added! Look at you, building wealth. 💎',
+          'Tracked! Your empire expands one asset at a time.',
+          'Added! That\'s one more thing to brag about. 🏡',
+        ]));
       }
       setShowModal(false);
     } catch (e) {
-      setError((e as Error).message);
+      addToast((e as Error).message, 'error');
     } finally {
       setSaving(false);
     }
   }
 
-  async function remove(id: string) {
-    setError(null);
-    try {
-      await api.deleteAsset(id);
-      setItems((prev) => prev.filter((a) => a.id !== id));
-    } catch (e) {
-      setError((e as Error).message);
-    }
+  function confirmRemove(item: Asset) {
+    setConfirm({
+      message: pick([
+        `"${item.name}" wants to stay on your list. Too bad, you're the boss.`,
+        `Poof — "${item.name}" will vanish from your tracker. The real one stays, don't worry.`,
+        `Are you sure? "${item.name}" has been nothing but loyal to you.`,
+        `"${item.name}" didn't sign up to be deleted. This feels personal.`,
+      ]),
+      onYes: async () => {
+        setConfirm(null);
+        try {
+          await api.deleteAsset(item.id);
+          setItems((prev) => prev.filter((a) => a.id !== item.id));
+          addToast(pick([
+            'Deleted! Your tracker is lighter now. 🔥',
+            'Gone! Out of sight, out of net worth.',
+            'Removed! The asset has left the building. 🚪',
+          ]), 'error');
+        } catch (e) {
+          addToast((e as Error).message, 'error');
+        }
+      },
+    });
   }
 
   if (loading) return <p className="sub">Loading…</p>;
 
   return (
     <main>
+      {/* ── Toasts ── */}
+      <div className="toast-container">
+        {toasts.map((t) => (
+          <div key={t.id} className={`toast ${t.type === 'error' ? 'toast-error' : 'toast-success'}`}>
+            <span className="toast-icon">{t.type === 'error' ? '🔴' : '🟢'}</span>
+            {t.message}
+          </div>
+        ))}
+      </div>
+
       <div className="tracking-header">
         <h1 className="page-title">Assets</h1>
         <p className="page-sub">Track property, vehicles, savings, and other valuables.</p>
@@ -233,7 +291,7 @@ export default function AssetsPage() {
                                 <path d="M13.5 3.5l3 3L6 17H3v-3L13.5 3.5z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
                               </svg>
                             </button>
-                            <button type="button" className="icon-btn icon-btn-sm is-danger" onClick={() => remove(item.id)} title="Delete">
+                            <button type="button" className="icon-btn icon-btn-sm is-danger" onClick={() => confirmRemove(item)} title="Delete">
                               <svg viewBox="0 0 20 20" width="12" height="12" fill="none" aria-hidden="true">
                                 <path d="M5 5l10 10M15 5 5 15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
                               </svg>
@@ -250,6 +308,7 @@ export default function AssetsPage() {
         )}
       </div>
 
+      {/* ── Add / Edit Modal ── */}
       {showModal && (
         <div className="modal-backdrop" onClick={() => setShowModal(false)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
@@ -286,6 +345,27 @@ export default function AssetsPage() {
               <button type="button" className="btn" onClick={save} disabled={saving}>
                 {saving ? 'Saving…' : editId ? 'Save changes' : 'Add asset'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Confirm Delete Modal ── */}
+      {confirm && (
+        <div className="modal-backdrop" onClick={() => setConfirm(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2 className="modal-title">Delete asset</h2>
+              <button type="button" className="icon-btn icon-btn-sm" onClick={() => setConfirm(null)} aria-label="Close">
+                <svg viewBox="0 0 20 20" width="12" height="12" fill="none" aria-hidden="true">
+                  <path d="M5 5l10 10M15 5 5 15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                </svg>
+              </button>
+            </div>
+            <p className="modal-message">{confirm.message}</p>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-ghost" onClick={() => setConfirm(null)}>Nah, keep it</button>
+              <button type="button" className="btn btn-danger" onClick={confirm.onYes}>Delete it</button>
             </div>
           </div>
         </div>

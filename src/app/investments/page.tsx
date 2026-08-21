@@ -13,6 +13,17 @@ interface Investment {
   currentValue: number;
 }
 
+interface Toast {
+  id: number;
+  message: string;
+  type: 'success' | 'error';
+}
+
+interface ConfirmState {
+  message: string;
+  onYes: () => void;
+}
+
 const ACCOUNT_TYPES = [
   { value: 'brokerage', label: 'Brokerage', icon: '💹' },
   { value: 'retirement', label: 'Retirement (CPF/401k)', icon: '🏛️' },
@@ -24,6 +35,10 @@ const ACCOUNT_TYPES = [
 
 function fmt(n: number) {
   return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function pick<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
 }
 
 function fromWire(w: api.ApiInvestment): Investment {
@@ -45,12 +60,20 @@ export default function InvestmentsPage() {
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
   const [name, setName] = useState('');
   const [type, setType] = useState('brokerage');
   const [shares, setShares] = useState('');
   const [costBasis, setCostBasis] = useState('');
   const [currentValue, setCurrentValue] = useState('');
+
+  function addToast(message: string, type: 'success' | 'error' = 'success') {
+    const id = Date.now();
+    setToasts((t) => [...t, { id, message, type }]);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 4000);
+  }
 
   useEffect(() => {
     api.listInvestments()
@@ -100,32 +123,67 @@ export default function InvestmentsPage() {
       if (editId) {
         await api.editInvestment(editId, input);
         setItems((prev) => prev.map((i) => (i.id === editId ? { id: editId, ...input } : i)));
+        addToast(pick([
+          'Updated! Your portfolio thanks you. 📊',
+          "Saved! Numbers don't lie… unless you entered them wrong.",
+          'Changes saved! Warren Buffett would be proud. Maybe.',
+        ]));
       } else {
         const created = await api.addInvestment(input);
         setItems((prev) => [...prev, fromWire(created)]);
+        addToast(pick([
+          'Account added! Your financial empire grows. 📈',
+          'Added! One step closer to world domination… financially.',
+          'New account tracked! Retirement is calling. 🏖️',
+        ]));
       }
       setShowModal(false);
     } catch (e) {
-      setError((e as Error).message);
+      addToast((e as Error).message, 'error');
     } finally {
       setSaving(false);
     }
   }
 
-  async function remove(id: string) {
-    setError(null);
-    try {
-      await api.deleteInvestment(id);
-      setItems((prev) => prev.filter((i) => i.id !== id));
-    } catch (e) {
-      setError((e as Error).message);
-    }
+  function confirmRemove(item: Investment) {
+    setConfirm({
+      message: pick([
+        `"${item.name}" is about to be liquidated… from your tracker, at least.`,
+        `Say goodbye to "${item.name}". Your portfolio won't miss it. Probably.`,
+        `Deleting "${item.name}" won't affect your actual money. But it will hurt our feelings.`,
+        `"${item.name}" is begging to stay. Are you really this cold?`,
+      ]),
+      onYes: async () => {
+        setConfirm(null);
+        try {
+          await api.deleteInvestment(item.id);
+          setItems((prev) => prev.filter((i) => i.id !== item.id));
+          addToast(pick([
+            'Deleted! The evidence has been destroyed. 🔥',
+            'Gone. Poof. Like your crypto portfolio in 2022.',
+            'Removed! One less thing to worry about.',
+          ]), 'error');
+        } catch (e) {
+          addToast((e as Error).message, 'error');
+        }
+      },
+    });
   }
 
   if (loading) return <p className="sub">Loading…</p>;
 
   return (
     <main>
+      {/* ── Toasts ── */}
+      <div className="toast-container">
+        {toasts.map((t) => (
+          <div key={t.id} className={`toast ${t.type === 'error' ? 'toast-error' : 'toast-success'}`}>
+            <span className="toast-icon">{t.type === 'error' ? '🔴' : '🟢'}</span>
+            {t.message}
+          </div>
+        ))}
+      </div>
+
       <div className="tracking-header">
         <h1 className="page-title">Investments</h1>
         <p className="page-sub">Track your investment accounts and portfolio performance.</p>
@@ -224,7 +282,7 @@ export default function InvestmentsPage() {
                               <path d="M13.5 3.5l3 3L6 17H3v-3L13.5 3.5z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
                             </svg>
                           </button>
-                          <button type="button" className="icon-btn icon-btn-sm is-danger" onClick={() => remove(item.id)} title="Delete">
+                          <button type="button" className="icon-btn icon-btn-sm is-danger" onClick={() => confirmRemove(item)} title="Delete">
                             <svg viewBox="0 0 20 20" width="12" height="12" fill="none" aria-hidden="true">
                               <path d="M5 5l10 10M15 5 5 15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
                             </svg>
@@ -240,6 +298,7 @@ export default function InvestmentsPage() {
         )}
       </div>
 
+      {/* ── Add / Edit Modal ── */}
       {showModal && (
         <div className="modal-backdrop" onClick={() => setShowModal(false)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
@@ -282,6 +341,27 @@ export default function InvestmentsPage() {
               <button type="button" className="btn" onClick={save} disabled={saving}>
                 {saving ? 'Saving…' : editId ? 'Save changes' : 'Add account'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Confirm Delete Modal ── */}
+      {confirm && (
+        <div className="modal-backdrop" onClick={() => setConfirm(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2 className="modal-title">Delete account</h2>
+              <button type="button" className="icon-btn icon-btn-sm" onClick={() => setConfirm(null)} aria-label="Close">
+                <svg viewBox="0 0 20 20" width="12" height="12" fill="none" aria-hidden="true">
+                  <path d="M5 5l10 10M15 5 5 15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                </svg>
+              </button>
+            </div>
+            <p className="modal-message">{confirm.message}</p>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-ghost" onClick={() => setConfirm(null)}>Nah, keep it</button>
+              <button type="button" className="btn btn-danger" onClick={confirm.onYes}>Delete it</button>
             </div>
           </div>
         </div>
