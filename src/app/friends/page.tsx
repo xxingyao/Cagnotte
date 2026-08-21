@@ -1,9 +1,22 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '@/components/StoreProvider';
 import * as api from '@/lib/api';
 import type { Friend } from '@/lib/types';
+
+interface Toast {
+  id: number;
+  type: 'success' | 'error';
+  message: string;
+}
+
+interface ConfirmState {
+  message: string;
+  action: () => Promise<void>;
+}
+
+let toastId = 0;
 
 export default function FriendsPage() {
   const { data, userId } = useStore();
@@ -22,11 +35,13 @@ export default function FriendsPage() {
       return true;
     }
   });
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
   const [email, setEmail] = useState('');
   const [sending, setSending] = useState(false);
   const [search, setSearch] = useState('');
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const toastTimers = useRef<Map<number, ReturnType<typeof setTimeout>>>(new Map());
 
   useEffect(() => {
     api
@@ -35,9 +50,40 @@ export default function FriendsPage() {
         setFriends(list);
         try { localStorage.setItem('cagnotte-friends', JSON.stringify(list)); } catch {}
       })
-      .catch((e) => setError((e as Error).message))
+      .catch((e) => showToast('error', (e as Error).message))
       .finally(() => setLoading(false));
   }, []);
+
+  // Clean up toast timers on unmount
+  useEffect(() => {
+    const timers = toastTimers.current;
+    return () => { timers.forEach((t) => clearTimeout(t)); };
+  }, []);
+
+  function showToast(type: 'success' | 'error', message: string) {
+    const id = ++toastId;
+    setToasts((prev) => [...prev, { id, type, message }]);
+    const timer = setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+      toastTimers.current.delete(id);
+    }, 4000);
+    toastTimers.current.set(id, timer);
+  }
+
+  function askConfirm(message: string, action: () => Promise<void>) {
+    setConfirm({ message, action });
+  }
+
+  async function runConfirm() {
+    if (!confirm) return;
+    setConfirming(true);
+    try {
+      await confirm.action();
+    } finally {
+      setConfirming(false);
+      setConfirm(null);
+    }
+  }
 
   const sharedGroupsByName = useMemo(() => {
     const map = new Map<string, string[]>();
@@ -75,63 +121,75 @@ export default function FriendsPage() {
       )
     : acceptedFriends;
 
+  function updateCache(list: Friend[]) {
+    try { localStorage.setItem('cagnotte-friends', JSON.stringify(list)); } catch {}
+  }
+
   async function sendRequest(e: React.FormEvent) {
     e.preventDefault();
     if (!email.trim()) return;
-    setError(null);
-    setSuccess(null);
     setSending(true);
     try {
       const friend = await api.sendFriendRequest(email.trim());
-      setFriends((prev) => [...prev, friend]);
+      const updated = [...friends, friend];
+      setFriends(updated);
+      updateCache(updated);
       setEmail('');
-      setSuccess('Friend request sent!');
+      showToast('success', `Friend request sent to ${friend.friendEmail}!`);
     } catch (err) {
-      setError((err as Error).message);
+      showToast('error', (err as Error).message);
     } finally {
       setSending(false);
     }
   }
 
-  async function acceptFriend(friendId: string) {
-    setError(null);
+  async function acceptFriend(friendId: string, name: string) {
     try {
       await api.respondFriendRequest(friendId, 'accept');
-      setFriends((prev) =>
-        prev.map((f) => (f.friendId === friendId ? { ...f, status: 'accepted' as const } : f)),
+      const updated = friends.map((f) =>
+        f.friendId === friendId ? { ...f, status: 'accepted' as const } : f,
       );
+      setFriends(updated);
+      updateCache(updated);
+      showToast('success', `You and ${name} are now friends!`);
     } catch (err) {
-      setError((err as Error).message);
+      showToast('error', (err as Error).message);
     }
   }
 
   async function declineFriend(friendId: string) {
-    setError(null);
     try {
       await api.respondFriendRequest(friendId, 'decline');
-      setFriends((prev) => prev.filter((f) => f.friendId !== friendId));
+      const updated = friends.filter((f) => f.friendId !== friendId);
+      setFriends(updated);
+      updateCache(updated);
+      showToast('success', 'Request declined.');
     } catch (err) {
-      setError((err as Error).message);
+      showToast('error', (err as Error).message);
     }
   }
 
   async function cancelSent(friendId: string) {
-    setError(null);
     try {
       await api.removeFriend(friendId);
-      setFriends((prev) => prev.filter((f) => f.friendId !== friendId));
+      const updated = friends.filter((f) => f.friendId !== friendId);
+      setFriends(updated);
+      updateCache(updated);
+      showToast('success', 'Request cancelled.');
     } catch (err) {
-      setError((err as Error).message);
+      showToast('error', (err as Error).message);
     }
   }
 
   async function remove(friendId: string) {
-    setError(null);
     try {
       await api.removeFriend(friendId);
-      setFriends((prev) => prev.filter((f) => f.friendId !== friendId));
+      const updated = friends.filter((f) => f.friendId !== friendId);
+      setFriends(updated);
+      updateCache(updated);
+      showToast('success', 'Friend removed.');
     } catch (err) {
-      setError((err as Error).message);
+      showToast('error', (err as Error).message);
     }
   }
 
@@ -139,17 +197,59 @@ export default function FriendsPage() {
 
   return (
     <main>
+      {/* Toast notifications */}
+      <div className="toast-container">
+        {toasts.map((t) => (
+          <div key={t.id} className={`toast toast-${t.type}`}>
+            <span className="toast-icon">{t.type === 'success' ? '✓' : '✕'}</span>
+            {t.message}
+          </div>
+        ))}
+      </div>
+
+      {/* Confirmation modal */}
+      {confirm && (
+        <div className="modal-backdrop" onClick={() => !confirming && setConfirm(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2 className="modal-title">Are you sure?</h2>
+              <button
+                type="button"
+                className="modal-close"
+                onClick={() => setConfirm(null)}
+                disabled={confirming}
+                aria-label="Close"
+              >
+                ×
+              </button>
+            </div>
+            <p className="modal-message">{confirm.message}</p>
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => setConfirm(null)}
+                disabled={confirming}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={runConfirm}
+                disabled={confirming}
+              >
+                {confirming ? 'Removing…' : 'Yes, remove'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="tracking-header">
         <h1 className="page-title">Friends</h1>
         <p className="page-sub">Add friends by email to split expenses together.</p>
       </div>
-
-      {error && (
-        <p className="split-hint" style={{ color: 'var(--negative)', marginBottom: 16 }}>{error}</p>
-      )}
-      {success && (
-        <p className="split-hint" style={{ color: 'var(--positive)', marginBottom: 16 }}>{success}</p>
-      )}
 
       <div className="tracking-summary">
         <div className="summary-card">
@@ -212,7 +312,7 @@ export default function FriendsPage() {
                       type="button"
                       className="btn"
                       style={{ width: 'auto', padding: '6px 14px', fontSize: 13 }}
-                      onClick={() => acceptFriend(f.friendId)}
+                      onClick={() => acceptFriend(f.friendId, f.friendName)}
                     >
                       Accept
                     </button>
@@ -220,7 +320,12 @@ export default function FriendsPage() {
                       type="button"
                       className="btn btn-ghost"
                       style={{ width: 'auto', padding: '6px 14px', fontSize: 13 }}
-                      onClick={() => declineFriend(f.friendId)}
+                      onClick={() =>
+                        askConfirm(
+                          `Decline the friend request from ${f.friendName}?`,
+                          () => declineFriend(f.friendId),
+                        )
+                      }
                     >
                       Decline
                     </button>
@@ -257,7 +362,12 @@ export default function FriendsPage() {
                     type="button"
                     className="btn btn-ghost"
                     style={{ width: 'auto', padding: '6px 14px', fontSize: 13 }}
-                    onClick={() => cancelSent(f.friendId)}
+                    onClick={() =>
+                      askConfirm(
+                        `Cancel the friend request to ${f.friendName}?`,
+                        () => cancelSent(f.friendId),
+                      )
+                    }
                   >
                     Cancel
                   </button>
@@ -349,7 +459,12 @@ export default function FriendsPage() {
                           <button
                             type="button"
                             className="icon-btn icon-btn-sm is-danger"
-                            onClick={() => remove(friend.friendId)}
+                            onClick={() =>
+                              askConfirm(
+                                `Remove ${friend.friendName} from your friends?`,
+                                () => remove(friend.friendId),
+                              )
+                            }
                             title="Remove"
                           >
                             <svg viewBox="0 0 20 20" width="12" height="12" fill="none" aria-hidden="true">
