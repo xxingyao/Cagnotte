@@ -7,8 +7,8 @@
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE ??
-  'https://oxfhpuu8a8.execute-api.us-east-1.amazonaws.com/dev';
-
+  'https://aywlfqpys6.execute-api.us-east-1.amazonaws.com/dev';
+  
 const TOKEN_KEY = 'cagnotte.tokens';
 
 interface Tokens {
