@@ -19,7 +19,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // case this device had never seen it.
   useEffect(() => {
     if (!ready || !user) return;
-    syncFromServer().then(() => {
+    syncFromServer(user.id).then(() => {
       const theme = getTheme();
       if (theme) document.documentElement.setAttribute('data-theme', theme);
     });

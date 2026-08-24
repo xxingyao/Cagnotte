@@ -17,7 +17,7 @@ const KEYS = {
   groupCategories: 'cagnotte:group-categories',
   customCategories: 'cagnotte:custom-categories',
 } as const;
-
+const OWNER_KEY = 'cagnotte:prefs-owner';
 export const FALLBACK_CURRENCY = 'SGD';
 export const PREFS_EVENT = 'cagnotte:prefs-changed';
 
@@ -76,20 +76,34 @@ let pulled = false;
  * never seen these values; local wins when there's nothing stored server-side
  * yet, so an existing user's folders get uploaded rather than wiped.
  */
-export async function syncFromServer(): Promise<void> {
+export async function syncFromServer(userId: string): Promise<void> {
   if (pulled) return;
   pulled = true;
+
+  // Sign-out only clears the auth token, so another account's preferences can
+  // still be sitting here. Drop them before syncing, or they'd leak into this
+  // user's cache — and worse, get uploaded to their account below.
+  const owner = readRaw(OWNER_KEY);
+  if (owner && owner !== userId) {
+    Object.values(KEYS).forEach((key) => {
+      try { localStorage.removeItem(key); } catch {}
+    });
+    emit();
+  }
+  try { localStorage.setItem(OWNER_KEY, userId); } catch {}
 
   let remote: api.ApiPreferences;
   try {
     remote = await api.getPreferences();
-  } catch {
-    return; // offline or endpoint not deployed — local carries on working
+  } catch (e) {
+    // Local still works, so a silent catch here could hide a broken route for
+    // weeks. This is the only trace it leaves.
+    console.warn('Could not load preferences from the server:', (e as Error).message);
+    return;
   }
 
   const isEmpty = !remote || Object.keys(remote).length === 0;
   if (isEmpty) {
-    // First run against the server: upload whatever this device already has.
     push({
       displayName: getDisplayName() || undefined,
       defaultCurrency: getDefaultCurrency(),
