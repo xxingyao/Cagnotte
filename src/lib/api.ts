@@ -3,8 +3,8 @@ import { getIdToken, logout } from './auth';
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE ??
-  'https://oxfhpuu8a8.execute-api.us-east-1.amazonaws.com/dev';
-
+  'https://aywlfqpys6.execute-api.us-east-1.amazonaws.com/dev';
+  
 const cache = new Map<string, { data: unknown; at: number }>();
 const inFlight = new Map<string, Promise<unknown>>();
 const CACHE_TTL = 60_000; // 1 minute
