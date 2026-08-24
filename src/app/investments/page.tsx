@@ -314,6 +314,26 @@ export default function InvestmentsPage() {
     });
   }
 
+    function confirmRemoveClosed(c: ClosedPosition) {
+    setConfirm({
+      message: pick([
+        `Delete the closed record for "${c.name}"? This only removes it from your history.`,
+        `"${c.name}" will disappear from your closed positions. The trade itself already happened — this just tidies the log.`,
+        `Removing this closed record. Doesn't undo the sale, just cleans up the list.`,
+      ]),
+      onYes: async () => {
+        setConfirm(null);
+        try {
+          await api.deleteInvestment(c.id);
+          setClosed((prev) => prev.filter((x) => x.id !== c.id));
+          addToast('Closed record removed.');
+        } catch (e) {
+          addToast((e as Error).message, 'error');
+        }
+      },
+    });
+  }
+
   /* ── Close position ── */
 
   function openClose(item: Position) {
@@ -614,6 +634,7 @@ export default function InvestmentsPage() {
                   <th>Proceeds</th>
                   <th>Realized P/L</th>
                   <th className="hide-mobile">Closed</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -631,6 +652,15 @@ export default function InvestmentsPage() {
                         </span>
                       </td>
                       <td className="hide-mobile">{c.closedAt}</td>
+                      <td>
+                        <div className="tracking-actions">
+                          <button type="button" className="icon-btn icon-btn-sm is-danger" onClick={() => confirmRemoveClosed(c)} title="Delete">
+                            <svg viewBox="0 0 20 20" width="12" height="12" fill="none" aria-hidden="true">
+                              <path d="M5 5l10 10M15 5 5 15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                            </svg>
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
