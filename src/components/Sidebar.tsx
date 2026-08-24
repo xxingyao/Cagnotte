@@ -34,6 +34,22 @@ export function Sidebar() {
     setDisplayName(localStorage.getItem(NAME_KEY) || '');
   }, []);
 
+    // Live-update when Settings saves a new name, and when another tab does.
+  useEffect(() => {
+    function onNameChange(event: Event) {
+      setDisplayName((event as CustomEvent<string>).detail ?? '');
+    }
+    function onStorage(event: StorageEvent) {
+      if (event.key === NAME_KEY) setDisplayName(event.newValue || '');
+    }
+    window.addEventListener('cagnotte:name-changed', onNameChange);
+    window.addEventListener('storage', onStorage);
+    return () => {
+      window.removeEventListener('cagnotte:name-changed', onNameChange);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
+
   function toggleCollapsed() {
     setCollapsed((current) => {
       const next = !current;

@@ -4,11 +4,12 @@ import { useEffect, useRef, useState } from 'react';
 import { useStore } from '@/components/StoreProvider';
 import * as api from '@/lib/api';
 import { avatarUrl } from '@/lib/avatar';
-import { CURRENCIES } from '@/lib/options';
+import { CurrencySelect } from '@/components/CurrencySelect';
+import { currencyName } from '@/lib/currencies';
+import { getCurrencies, getDefaultCurrency, onPrefsChange, removeCurrency, setDefaultCurrency } from '@/lib/prefs';
 
 const MAX_BYTES = 2 * 1024 * 1024;
 const THEME_KEY = 'cagnotte:theme';
-const CURRENCY_KEY = 'cagnotte:default-currency';
 const NAME_KEY = 'cagnotte:display-name';
 
 type ThemeChoice = 'light' | 'dark';
@@ -30,10 +31,11 @@ export default function SettingsPage() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [myCurrencies, setMyCurrencies] = useState<string[]>([]);
 
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [theme, setTheme] = useState<ThemeChoice>('light');
-  const [defaultCurrency, setDefaultCurrency] = useState('SGD');
+  const [defaultCurrency, setDefaultCurrencyState] = useState('SGD');
   const [displayName, setDisplayName] = useState('');
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
@@ -49,15 +51,39 @@ export default function SettingsPage() {
   useEffect(() => {
     try {
       const t = localStorage.getItem(THEME_KEY) as ThemeChoice | null;
-      if (t) { 
-        setTheme(t); 
-        applyTheme(t); 
-      }
-      const c = localStorage.getItem(CURRENCY_KEY);
-      if (c) setDefaultCurrency(c);
+      if (t) { setTheme(t); applyTheme(t); }
       const n = localStorage.getItem(NAME_KEY);
       if (n) setDisplayName(n);
     } catch {}
+  }, []);
+
+  /* Currency prefs live in prefs.ts and can change from the picker too. */
+  useEffect(() => {
+    const sync = () => {
+      setDefaultCurrencyState(getDefaultCurrency());
+      setMyCurrencies(getCurrencies());
+    };
+    sync();
+    return onPrefsChange(sync);
+  }, []);
+  /* Load saved preferences */
+  useEffect(() => {
+    try {
+      const t = localStorage.getItem(THEME_KEY) as ThemeChoice | null;
+      if (t) { setTheme(t); applyTheme(t); }
+      const n = localStorage.getItem(NAME_KEY);
+      if (n) setDisplayName(n);
+    } catch {}
+  }, []);
+
+  /* Currency prefs live in prefs.ts and can change from the picker too. */
+  useEffect(() => {
+    const sync = () => {
+      setDefaultCurrencyState(getDefaultCurrency());
+      setMyCurrencies(getCurrencies());
+    };
+    sync();
+    return onPrefsChange(sync);
   }, []);
 
   if (!ready) return <p className="sub">Loading…</p>;
@@ -109,10 +135,17 @@ export default function SettingsPage() {
     addToast(next === 'dark' ? 'Dark mode activated. Welcome to the dark side. 🌙' : 'Light mode! Bright and beautiful. ☀️');
   }
 
-  function changeCurrency(c: string) {
-    setDefaultCurrency(c);
-    try { localStorage.setItem(CURRENCY_KEY, c); } catch {}
-    addToast(`Default currency set to ${c}! 💱`);
+  function changeCurrency(code: string) {
+    setDefaultCurrency(code); // prefs.ts — also guarantees it's in the list
+    addToast(`Default currency set to ${code}! 💱`);
+  }
+
+  function dropCurrency(code: string) {
+    if (!removeCurrency(code)) {
+      addToast(`${code} is your default — pick a different default first.`, 'error');
+      return;
+    }
+    addToast(`${code} removed from your list.`);
   }
 
   function saveName() {
@@ -120,6 +153,10 @@ export default function SettingsPage() {
     if (!trimmed) return;
     setDisplayName(trimmed);
     try { localStorage.setItem(NAME_KEY, trimmed); } catch {}
+    // The Sidebar reads this once on mount; a plain write leaves it stale until
+    // a reload. The `storage` event doesn't fire in the tab that wrote, so
+    // announce it ourselves.
+    window.dispatchEvent(new CustomEvent('cagnotte:name-changed', { detail: trimmed }));
     setEditingName(false);
     addToast(pick([
       `You're now "${trimmed}". Identity updated! 🏷️`,
@@ -211,18 +248,46 @@ export default function SettingsPage() {
         </p>
       </div>
 
-      {/* ── Default currency ── */}
+      {/* ── Currencies ── */}
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-head">
           <h2 className="card-title">Default currency</h2>
         </div>
-        <select className="select" value={defaultCurrency}
-          onChange={(e) => changeCurrency(e.target.value)}>
-          {CURRENCIES.map((c) => <option key={c}>{c}</option>)}
-        </select>
+        <CurrencySelect value={defaultCurrency} onChange={changeCurrency} />
         <p className="split-hint" style={{ marginTop: 8, marginBottom: 0 }}>
           Pre-selected when you create a new group.
         </p>
+
+        {myCurrencies.length > 1 && (
+          <>
+            <div className="card-head" style={{ marginTop: 20, marginBottom: 10 }}>
+              <h2 className="card-title">Your currencies</h2>
+            </div>
+            <ul className="pref-currency-list">
+              {myCurrencies.map((code) => (
+                <li key={code} className="pref-currency-row">
+                  <span className="currency-code">{code}</span>
+                  <span className="currency-name">{currencyName(code)}</span>
+                  {code === defaultCurrency ? (
+                    <span className="currency-added">default</span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="currency-remove"
+                      onClick={() => dropCurrency(code)}
+                      title={`Remove ${code}`}
+                    >
+                      ×
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+            <p className="split-hint" style={{ marginTop: 8, marginBottom: 0 }}>
+              These are the options you&apos;ll see when adding an expense.
+            </p>
+          </>
+        )}
       </div>
 
       {/* ── Theme toggle ── */}

@@ -5,20 +5,25 @@ import Link from 'next/link';
 import { useEffect } from 'react';
 import { useStore } from './StoreProvider';
 import { Sidebar } from './Sidebar';
+import{ getTheme, syncFromServer } from '@/lib/prefs';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, ready } = useStore();
 
-  // Apply the saved theme on every page, not just Settings.
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('cagnotte:theme');
-      if (saved === 'dark' || saved === 'light') {
-        document.documentElement.setAttribute('data-theme', saved);
-      }
-    } catch {}
+    const theme = getTheme();
+    if (theme) document.documentElement.setAttribute('data-theme', theme);
   }, []);
 
+  // Pull server-side preferences once signed in, then re-apply the theme in
+  // case this device had never seen it.
+  useEffect(() => {
+    if (!ready || !user) return;
+    syncFromServer().then(() => {
+      const theme = getTheme();
+      if (theme) document.documentElement.setAttribute('data-theme', theme);
+    });
+  }, [ready, user]);
   // Not signed in (or still loading): no nav — there's nothing to navigate to
   // yet. Just the wordmark above whatever the page itself renders (the
   // sign-in screen).

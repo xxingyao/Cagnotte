@@ -408,10 +408,25 @@ export async function editInvestment(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
+  invalidate('/me/investments');
+  
 }
 
 export async function deleteInvestment(investmentId: string): Promise<void> {
   await request(`/me/investments/${encodeURIComponent(investmentId)}`, { method: 'DELETE' });
+  invalidate('/me/investments');
+}
+
+export interface ApiInvestment {
+  investmentId: string;
+  name: string;
+  type: string;
+  icon: string;
+  shares: number;
+  costBasis: number;
+  currentValue: number;
+  currency?: string;   // absent on rows created before multi-currency
+  updatedAt: string;
 }
 
 // ─── Assets ─────────────────────────────────────────────────────────────────
@@ -452,4 +467,30 @@ export async function editAsset(assetId: string, input: Omit<ApiAsset, 'assetId'
 
 export async function deleteAsset(assetId: string): Promise<void> {
   await request(`/me/assets/${encodeURIComponent(assetId)}`, { method: 'DELETE' });
+}
+
+// ─── Preferences ────────────────────────────────────────────────────────────
+
+export interface ApiPreferences {
+  displayName?: string;
+  defaultCurrency?: string;
+  currencies?: string[];
+  theme?: 'light' | 'dark';
+  groupCategories?: Record<string, string>;
+  customCategories?: { id: string; label: string; order: number }[];
+  updatedAt?: string;
+}
+
+export async function getPreferences(): Promise<ApiPreferences> {
+  const json = await cachedRequest('/me/preferences');
+  return (json ?? {}) as ApiPreferences;
+}
+
+export async function putPreferences(patch: ApiPreferences): Promise<void> {
+  await request('/me/preferences', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  invalidate('/me/preferences');
 }

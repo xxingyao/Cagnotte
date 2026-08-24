@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useStore } from '@/components/StoreProvider';
 import { Modal } from '@/components/Modal';
-import { CATEGORIES, CATEGORY_EMOJI, CURRENCIES } from '@/lib/options';
+import { CATEGORIES, CATEGORY_EMOJI } from '@/lib/options';
+import { CurrencySelect } from '@/components/CurrencySelect';
 import { formatMoney, minorToAmountString, parseAmountToMinor } from '@/lib/money';
 import { baseCurrencyAmount, computeBalances, computeSettlements, type Balance, type Settlement } from '@/lib/balances';
 import type { Expense, Member } from '@/lib/types';
@@ -828,10 +829,7 @@ function AddExpenseCard({
         </label>
         <label className="field">
           <span className="field-label">Currency</span>
-          <select className="select" value={currency}
-                  onChange={(e) => setCurrency(e.target.value)}>
-            {CURRENCIES.map((code) => <option key={code}>{code}</option>)}
-          </select>
+          <CurrencySelect value={currency} onChange={setCurrency} />
         </label>
         <label className="field">
           <span className="field-label">Category</span>

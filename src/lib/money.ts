@@ -1,7 +1,12 @@
-const ZERO_DECIMAL = new Set(['JPY', 'KRW', 'VND', 'IDR']);
+import { currencyInfo } from './currencies';
 
+/**
+ * Minor-unit exponent. Most currencies are 2, but JPY/VND/KRW and the CFA
+ * francs are 0, and the Gulf dinars are 3 — getting this wrong stores amounts
+ * at the wrong scale.
+ */
 export function decimalsFor(currency: string): number {
-  return ZERO_DECIMAL.has(currency.toUpperCase()) ? 0 : 2;
+  return currencyInfo(currency)?.decimals ?? 2;
 }
 
 /** "45.50" -> 4550. Returns null if the input isn't a clean amount. */

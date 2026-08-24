@@ -2,27 +2,24 @@
 
 import { useEffect, useState } from 'react';
 import * as api from '@/lib/api';
+import { CurrencySelect } from '@/components/CurrencySelect';
+import { decimalsFor, formatMoney, parseAmountToMinor } from '@/lib/money';
+import { getDefaultCurrency } from '@/lib/prefs';
+import {
+  Position,
+  avgCostMinor,
+  formatUnitPrice,
+  gainMinor,
+  gainPct,
+  priceMinor,
+  totalsByCurrency,
+} from '@/lib/portfolio';
 
-interface Investment {
-  id: string;
-  name: string;
-  type: string;
-  icon: string;
-  shares: number;
-  costBasis: number;
-  currentValue: number;
-}
+interface Toast { id: number; message: string; type: 'success' | 'error'; }
+interface ConfirmState { message: string; onYes: () => void; }
 
-interface Toast {
-  id: number;
-  message: string;
-  type: 'success' | 'error';
-}
-
-interface ConfirmState {
-  message: string;
-  onYes: () => void;
-}
+/** Per-unit suits stocks and crypto; total suits CPF, robo, and cash balances. */
+type EntryMode = 'unit' | 'total';
 
 const ACCOUNT_TYPES = [
   { value: 'brokerage', label: 'Brokerage', icon: '💹' },
@@ -33,41 +30,53 @@ const ACCOUNT_TYPES = [
   { value: 'other', label: 'Other', icon: '📁' },
 ];
 
-function fmt(n: number) {
-  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
 function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-function fromWire(w: api.ApiInvestment): Investment {
+/** Wire amounts are major units; everything inside this page is minor units. */
+function toMinor(major: number, currency: string): number {
+  return Math.round(major * 10 ** decimalsFor(currency));
+}
+
+function toMajor(minor: number, currency: string): number {
+  return minor / 10 ** decimalsFor(currency);
+}
+
+function fromWire(w: api.ApiInvestment, fallbackCurrency: string): Position {
+  const currency = w.currency || fallbackCurrency;
   return {
     id: w.investmentId,
     name: w.name,
     type: w.type,
     icon: w.icon,
-    shares: w.shares,
-    costBasis: w.costBasis,
-    currentValue: w.currentValue,
+    currency,
+    quantity: w.shares,
+    costMinor: toMinor(w.costBasis, currency),
+    valueMinor: toMinor(w.currentValue, currency),
   };
 }
 
 export default function InvestmentsPage() {
-  const [items, setItems] = useState<Investment[]>([]);
+  const [items, setItems] = useState<Position[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
 
+  // Form
   const [name, setName] = useState('');
   const [type, setType] = useState('brokerage');
-  const [shares, setShares] = useState('');
-  const [costBasis, setCostBasis] = useState('');
-  const [currentValue, setCurrentValue] = useState('');
+  const [currency, setCurrency] = useState('SGD');
+  const [mode, setMode] = useState<EntryMode>('unit');
+  const [quantity, setQuantity] = useState('');
+  const [unitCost, setUnitCost] = useState('');
+  const [unitPrice, setUnitPrice] = useState('');
+  const [totalCost, setTotalCost] = useState('');
+  const [totalValue, setTotalValue] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
 
   function addToast(message: string, type: 'success' | 'error' = 'success') {
     const id = Date.now();
@@ -76,61 +85,137 @@ export default function InvestmentsPage() {
   }
 
   useEffect(() => {
+    const fallback = getDefaultCurrency();
+    setCurrency(fallback);
     api.listInvestments()
-      .then((list) => setItems(list.map(fromWire)))
-      .catch((e) => setError(e.message))
+      .then((list) => setItems(list.map((w) => fromWire(w, fallback))))
+      .catch((e) => addToast((e as Error).message, 'error'))
       .finally(() => setLoading(false));
   }, []);
 
-  const totalValue = items.reduce((sum, i) => sum + i.currentValue, 0);
-  const totalCost = items.reduce((sum, i) => sum + i.costBasis, 0);
-  const totalGain = totalValue - totalCost;
-  const totalPct = totalCost > 0 ? (totalGain / totalCost) * 100 : 0;
+  const totals = totalsByCurrency(items);
 
-  function openAdd() {
-    setEditId(null);
-    setName('');
-    setType('brokerage');
-    setShares('');
-    setCostBasis('');
-    setCurrentValue('');
-    setShowModal(true);
+  /* ── Form ── */
+
+  function resetForm(seed?: Position) {
+    setFormError(null);
+    if (!seed) {
+      setEditId(null);
+      setName('');
+      setType('brokerage');
+      setCurrency(getDefaultCurrency());
+      setMode('unit');
+      setQuantity('');
+      setUnitCost('');
+      setUnitPrice('');
+      setTotalCost('');
+      setTotalValue('');
+      return;
+    }
+    setEditId(seed.id);
+    setName(seed.name);
+    setType(seed.type);
+    setCurrency(seed.currency);
+    setMode(seed.quantity > 0 ? 'unit' : 'total');
+    setQuantity(seed.quantity > 0 ? String(seed.quantity) : '');
+
+    const avg = avgCostMinor(seed);
+    const last = priceMinor(seed);
+    const d = decimalsFor(seed.currency);
+    setUnitCost(avg === null ? '' : (avg / 10 ** d).toString());
+    setUnitPrice(last === null ? '' : (last / 10 ** d).toString());
+    setTotalCost(toMajor(seed.costMinor, seed.currency).toString());
+    setTotalValue(toMajor(seed.valueMinor, seed.currency).toString());
   }
 
-  function openEdit(item: Investment) {
-    setEditId(item.id);
-    setName(item.name);
-    setType(item.type);
-    setShares(String(item.shares));
-    setCostBasis(String(item.costBasis));
-    setCurrentValue(String(item.currentValue));
-    setShowModal(true);
+  function openAdd() { resetForm(); setShowModal(true); }
+  function openEdit(item: Position) { resetForm(item); setShowModal(true); }
+
+  /** The single place the form's numbers become a position. Returns null on bad input. */
+  function derive(): { quantity: number; costMinor: number; valueMinor: number } | null {
+    if (mode === 'total') {
+      const cost = parseAmountToMinor(totalCost || '0', currency);
+      const value = parseAmountToMinor(totalValue || '0', currency);
+      if (cost === null || value === null) {
+        setFormError('Amounts must be plain numbers, like 1250.00');
+        return null;
+      }
+      const qty = quantity.trim() ? Number(quantity) : 0;
+      if (!Number.isFinite(qty) || qty < 0) {
+        setFormError('Units must be zero or more.');
+        return null;
+      }
+      return { quantity: qty, costMinor: cost, valueMinor: value };
+    }
+
+    const qty = Number(quantity);
+    if (!Number.isFinite(qty) || qty <= 0) {
+      setFormError('Enter how many units you hold, or switch to Total.');
+      return null;
+    }
+    const cost = parseAmountToMinor(unitCost || '0', currency);
+    const price = parseAmountToMinor(unitPrice || '0', currency);
+    if (cost === null || price === null) {
+      setFormError('Prices must be plain numbers, like 42.50');
+      return null;
+    }
+    // Round once, at the end — rounding per-unit first would drift on big holdings.
+    return {
+      quantity: qty,
+      costMinor: Math.round(cost * qty),
+      valueMinor: Math.round(price * qty),
+    };
   }
+
+  // Live preview under the per-unit inputs, so the totals are never a surprise.
+  const preview = (() => {
+    if (mode !== 'unit') return null;
+    const qty = Number(quantity);
+    if (!Number.isFinite(qty) || qty <= 0) return null;
+    const cost = parseAmountToMinor(unitCost || '0', currency);
+    const price = parseAmountToMinor(unitPrice || '0', currency);
+    if (cost === null || price === null) return null;
+    const costMinor = Math.round(cost * qty);
+    const valueMinor = Math.round(price * qty);
+    return { costMinor, valueMinor, gain: valueMinor - costMinor };
+  })();
 
   async function save() {
+    const derived = derive();
+    if (!derived) return;
+
     setSaving(true);
-    setError(null);
+    setFormError(null);
     const icon = ACCOUNT_TYPES.find((t) => t.value === type)?.icon ?? '📁';
-    const input = {
+    const position: Omit<Position, 'id'> = {
       name: name.trim() || 'Untitled',
       type,
       icon,
-      shares: parseFloat(shares) || 0,
-      costBasis: parseFloat(costBasis) || 0,
-      currentValue: parseFloat(currentValue) || 0,
+      currency,
+      ...derived,
     };
+    const wire = {
+      name: position.name,
+      type: position.type,
+      icon: position.icon,
+      currency: position.currency,
+      shares: position.quantity,
+      costBasis: toMajor(position.costMinor, currency),
+      currentValue: toMajor(position.valueMinor, currency),
+    };
+
     try {
       if (editId) {
-        await api.editInvestment(editId, input);
-        setItems((prev) => prev.map((i) => (i.id === editId ? { id: editId, ...input } : i)));
+        await api.editInvestment(editId, wire);
+        setItems((prev) => prev.map((i) => (i.id === editId ? { id: editId, ...position } : i)));
         addToast(pick([
           'Updated! Your portfolio thanks you. 📊',
           "Saved! Numbers don't lie… unless you entered them wrong.",
           'Changes saved! Warren Buffett would be proud. Maybe.',
         ]));
       } else {
-        const created = await api.addInvestment(input);
-        setItems((prev) => [...prev, fromWire(created)]);
+        const created = await api.addInvestment(wire);
+        setItems((prev) => [...prev, fromWire(created, currency)]);
         addToast(pick([
           'Account added! Your financial empire grows. 📈',
           'Added! One step closer to world domination… financially.',
@@ -145,31 +230,26 @@ export default function InvestmentsPage() {
     }
   }
 
-  function confirmRemove(item: Investment) {
+  function confirmRemove(item: Position) {
     setConfirm({
       message: pick([
         `"${item.name}" is about to be liquidated… from your tracker, at least.`,
         `Say goodbye to "${item.name}". Your portfolio won't miss it. Probably.`,
         `Deleting "${item.name}" won't affect your actual money. But it will hurt our feelings.`,
-        `"${item.name}" is begging to stay. Are you really this cold?`,
       ]),
       onYes: async () => {
         setConfirm(null);
         try {
           await api.deleteInvestment(item.id);
           setItems((prev) => prev.filter((i) => i.id !== item.id));
-          addToast(pick([
-            'Deleted! The evidence has been destroyed. 🔥',
-            'Gone. Poof. Like your crypto portfolio in 2022.',
-            'Removed! One less thing to worry about.',
-          ]), 'error');
+          addToast('Deleted. One less thing to worry about.');
         } catch (e) {
           addToast((e as Error).message, 'error');
         }
       },
     });
   }
-  
+
   return (
     <main>
       {/* ── Toasts ── */}
@@ -184,44 +264,58 @@ export default function InvestmentsPage() {
 
       <div className="tracking-header">
         <h1 className="page-title">Investments</h1>
-        <p className="page-sub">Track your investment accounts and portfolio performance.</p>
+        <p className="page-sub">Track your holdings and portfolio performance.</p>
       </div>
 
-      {error && (
-        <p className="split-hint" style={{ color: 'var(--negative)', marginBottom: 16 }}>{error}</p>
+      {/* ── Totals, one row per currency ── */}
+      {loading ? (
+        <div className="tracking-summary">
+          <div className="summary-card">
+            <p className="summary-card-label">Total value</p>
+            <p className="summary-card-value">—</p>
+          </div>
+        </div>
+      ) : totals.length === 0 ? null : (
+        totals.map((t) => (
+          <div className="tracking-summary" key={t.currency}>
+            <div className="summary-card">
+              <p className="summary-card-label">Value · {t.currency}</p>
+              <p className="summary-card-value">{formatMoney(t.valueMinor, t.currency)}</p>
+            </div>
+            <div className="summary-card">
+              <p className="summary-card-label">Cost basis</p>
+              <p className="summary-card-value dim">{formatMoney(t.costMinor, t.currency)}</p>
+            </div>
+            <div className="summary-card">
+              <p className="summary-card-label">Unrealised P/L</p>
+              <p className={`summary-card-value ${t.gainMinor >= 0 ? 'pos' : 'neg'}`}>
+                {t.gainMinor >= 0 ? '+' : '−'}
+                {formatMoney(Math.abs(t.gainMinor), t.currency)}
+                {t.gainPct !== null && (
+                  <span style={{ fontSize: 14, fontWeight: 500, marginLeft: 8 }}>
+                    ({t.gainPct >= 0 ? '+' : ''}{t.gainPct.toFixed(1)}%)
+                  </span>
+                )}
+              </p>
+            </div>
+          </div>
+        ))
       )}
 
-      <div className="tracking-summary">
-        <div className="summary-card">
-          <p className="summary-card-label">Total value</p>
-          <p className="summary-card-value">${fmt(totalValue)}</p>
-        </div>
-        <div className="summary-card">
-          <p className="summary-card-label">Total cost basis</p>
-          <p className="summary-card-value dim">${fmt(totalCost)}</p>
-        </div>
-        <div className="summary-card">
-          <p className="summary-card-label">Total gain / loss</p>
-          <p className={`summary-card-value ${totalGain >= 0 ? 'pos' : 'neg'}`}>
-            {totalGain >= 0 ? '+' : ''}${fmt(totalGain)}
-            {totalCost > 0 && (
-              <span style={{ fontSize: 14, fontWeight: 500, marginLeft: 8 }}>
-                ({totalPct >= 0 ? '+' : ''}{totalPct.toFixed(1)}%)
-              </span>
-            )}
-          </p>
-        </div>
-      </div>
+      {totals.length > 1 && (
+        <p className="split-hint" style={{ marginTop: -8, marginBottom: 16 }}>
+          Currencies are shown separately — converting them would need exchange rates.
+        </p>
+      )}
 
       <div className="tracking-table-wrap">
-        
         <div className="tracking-table-head">
-          <h2 className="tracking-table-title">Accounts</h2>
+          <h2 className="tracking-table-title">Holdings</h2>
           <button type="button" className="tracking-add-btn" onClick={openAdd}>
             <svg viewBox="0 0 16 16" width="13" height="13" fill="none" aria-hidden="true">
               <path d="M8 2v12M2 8h12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
             </svg>
-            Add account
+            Add holding
           </button>
         </div>
 
@@ -241,26 +335,27 @@ export default function InvestmentsPage() {
         ) : items.length === 0 ? (
           <div className="tracking-empty">
             <div className="tracking-empty-icon">📈</div>
-            <p>No investment accounts yet.</p>
-            <p className="sub">Add your brokerage, retirement, or crypto accounts to start tracking.</p>
+            <p>No holdings yet.</p>
+            <p className="sub">Add a brokerage position, retirement account, or crypto to start tracking.</p>
           </div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <table className="tracking-table">
               <thead>
                 <tr>
-                  <th>Account</th>
-                  <th className="hide-mobile">Shares / Units</th>
-                  <th className="hide-mobile">Cost basis</th>
-                  <th>Current value</th>
-                  <th>Gain / Loss</th>
+                  <th>Holding</th>
+                  <th className="hide-mobile">Units</th>
+                  <th className="hide-mobile">Avg cost</th>
+                  <th className="hide-mobile">Price</th>
+                  <th>Value</th>
+                  <th>P/L</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
                 {items.map((item) => {
-                  const gain = item.currentValue - item.costBasis;
-                  const pct = item.costBasis > 0 ? (gain / item.costBasis) * 100 : 0;
+                  const gain = gainMinor(item);
+                  const pct = gainPct(item);
                   return (
                     <tr key={item.id}>
                       <td>
@@ -269,18 +364,19 @@ export default function InvestmentsPage() {
                           <div>
                             <div className="tracking-name">{item.name}</div>
                             <div className="tracking-type">
-                              {ACCOUNT_TYPES.find((t) => t.value === item.type)?.label}
+                              {ACCOUNT_TYPES.find((t) => t.value === item.type)?.label} · {item.currency}
                             </div>
                           </div>
                         </div>
                       </td>
-                      <td className="hide-mobile">{item.shares > 0 ? item.shares : '—'}</td>
-                      <td className="hide-mobile">${fmt(item.costBasis)}</td>
-                      <td><strong>${fmt(item.currentValue)}</strong></td>
+                      <td className="hide-mobile">{item.quantity > 0 ? item.quantity : '—'}</td>
+                      <td className="hide-mobile">{formatUnitPrice(avgCostMinor(item), item.currency)}</td>
+                      <td className="hide-mobile">{formatUnitPrice(priceMinor(item), item.currency)}</td>
+                      <td><strong>{formatMoney(item.valueMinor, item.currency)}</strong></td>
                       <td>
                         <span className={gain >= 0 ? 'pos' : 'neg'}>
-                          {gain >= 0 ? '+' : ''}${fmt(gain)}
-                          {item.costBasis > 0 && (
+                          {gain >= 0 ? '+' : '−'}{formatMoney(Math.abs(gain), item.currency)}
+                          {pct !== null && (
                             <span style={{ fontSize: 12, marginLeft: 4 }}>
                               ({pct >= 0 ? '+' : ''}{pct.toFixed(1)}%)
                             </span>
@@ -310,70 +406,133 @@ export default function InvestmentsPage() {
         )}
       </div>
 
-      {/* ── Add / Edit Modal ── */}
+      {/* ── Add / Edit ── */}
       {showModal && (
         <div className="modal-backdrop" onClick={() => setShowModal(false)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
             <div className="modal-head">
-              <h2 className="modal-title">{editId ? 'Edit account' : 'Add investment account'}</h2>
-              <button type="button" className="icon-btn icon-btn-sm" onClick={() => setShowModal(false)} aria-label="Close">
-                <svg viewBox="0 0 20 20" width="12" height="12" fill="none" aria-hidden="true">
-                  <path d="M5 5l10 10M15 5 5 15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-                </svg>
-              </button>
+              <h2 className="modal-title">{editId ? 'Edit holding' : 'Add holding'}</h2>
+              <button type="button" className="modal-close" onClick={() => setShowModal(false)} aria-label="Close">×</button>
             </div>
+
             <label className="field">
-              <span className="field-label">Account name</span>
-              <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Tiger Brokerage" />
+              <span className="field-label">Name</span>
+              <input className="input" value={name} onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. NVIDIA, or CPF Ordinary Account" autoFocus />
             </label>
-            <label className="field">
-              <span className="field-label">Account type</span>
-              <select className="select" value={type} onChange={(e) => setType(e.target.value)}>
-                {ACCOUNT_TYPES.map((t) => (
-                  <option key={t.value} value={t.value}>{t.icon} {t.label}</option>
-                ))}
-              </select>
-            </label>
+
             <div className="grid-2">
               <label className="field">
-                <span className="field-label">Shares / Units</span>
-                <input className="input" type="number" step="any" value={shares} onChange={(e) => setShares(e.target.value)} placeholder="0" />
+                <span className="field-label">Type</span>
+                <select className="select" value={type} onChange={(e) => setType(e.target.value)}>
+                  {ACCOUNT_TYPES.map((t) => (
+                    <option key={t.value} value={t.value}>{t.icon} {t.label}</option>
+                  ))}
+                </select>
               </label>
               <label className="field">
-                <span className="field-label">Cost basis ($)</span>
-                <input className="input" type="number" step="0.01" value={costBasis} onChange={(e) => setCostBasis(e.target.value)} placeholder="0.00" />
+                <span className="field-label">Currency</span>
+                <CurrencySelect value={currency} onChange={setCurrency} />
               </label>
             </div>
-            <label className="field">
-              <span className="field-label">Current value ($)</span>
-              <input className="input" type="number" step="0.01" value={currentValue} onChange={(e) => setCurrentValue(e.target.value)} placeholder="0.00" />
-            </label>
+
+            <div className="field">
+              <span className="field-label">How do you want to enter it?</span>
+              <div className="theme-toggle">
+                <button type="button"
+                  className={`theme-toggle-btn${mode === 'unit' ? ' is-active' : ''}`}
+                  onClick={() => setMode('unit')}>
+                  Per unit
+                </button>
+                <button type="button"
+                  className={`theme-toggle-btn${mode === 'total' ? ' is-active' : ''}`}
+                  onClick={() => setMode('total')}>
+                  Total
+                </button>
+              </div>
+            </div>
+
+            {mode === 'unit' ? (
+              <>
+                <label className="field">
+                  <span className="field-label">Units held</span>
+                  <input className="input" value={quantity} inputMode="decimal"
+                    onChange={(e) => setQuantity(e.target.value)} placeholder="100" />
+                </label>
+                <div className="grid-2">
+                  <label className="field">
+                    <span className="field-label">Average cost / unit</span>
+                    <input className="input" value={unitCost} inputMode="decimal"
+                      onChange={(e) => setUnitCost(e.target.value)} placeholder="0.00" />
+                  </label>
+                  <label className="field">
+                    <span className="field-label">Current price / unit</span>
+                    <input className="input" value={unitPrice} inputMode="decimal"
+                      onChange={(e) => setUnitPrice(e.target.value)} placeholder="0.00" />
+                  </label>
+                </div>
+                {preview && (
+                  <div className="calc-preview">
+                    <span>Cost <strong>{formatMoney(preview.costMinor, currency)}</strong></span>
+                    <span>Value <strong>{formatMoney(preview.valueMinor, currency)}</strong></span>
+                    <span className={preview.gain >= 0 ? 'pos' : 'neg'}>
+                      P/L <strong>
+                        {preview.gain >= 0 ? '+' : '−'}{formatMoney(Math.abs(preview.gain), currency)}
+                      </strong>
+                    </span>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="grid-2">
+                  <label className="field">
+                    <span className="field-label">Total cost</span>
+                    <input className="input" value={totalCost} inputMode="decimal"
+                      onChange={(e) => setTotalCost(e.target.value)} placeholder="0.00" />
+                  </label>
+                  <label className="field">
+                    <span className="field-label">Current value</span>
+                    <input className="input" value={totalValue} inputMode="decimal"
+                      onChange={(e) => setTotalValue(e.target.value)} placeholder="0.00" />
+                  </label>
+                </div>
+                <label className="field">
+                  <span className="field-label">Units held (optional)</span>
+                  <input className="input" value={quantity} inputMode="decimal"
+                    onChange={(e) => setQuantity(e.target.value)} placeholder="Leave blank for cash-like accounts" />
+                </label>
+              </>
+            )}
+
+            {formError && (
+              <p className="split-hint" style={{ color: 'var(--negative)' }}>{formError}</p>
+            )}
+
             <div className="modal-actions">
-              <button type="button" className="btn btn-ghost" onClick={() => setShowModal(false)}>Cancel</button>
+              <button type="button" className="btn btn-ghost" onClick={() => setShowModal(false)}>
+                Cancel
+              </button>
               <button type="button" className="btn" onClick={save} disabled={saving}>
-                {saving ? 'Saving…' : editId ? 'Save changes' : 'Add account'}
+                {saving ? 'Saving…' : editId ? 'Save changes' : 'Add holding'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Confirm Delete Modal ── */}
+      {/* ── Confirm delete ── */}
       {confirm && (
         <div className="modal-backdrop" onClick={() => setConfirm(null)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
             <div className="modal-head">
-              <h2 className="modal-title">Delete account</h2>
-              <button type="button" className="icon-btn icon-btn-sm" onClick={() => setConfirm(null)} aria-label="Close">
-                <svg viewBox="0 0 20 20" width="12" height="12" fill="none" aria-hidden="true">
-                  <path d="M5 5l10 10M15 5 5 15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-                </svg>
-              </button>
+              <h2 className="modal-title">Delete holding</h2>
+              <button type="button" className="modal-close" onClick={() => setConfirm(null)} aria-label="Close">×</button>
             </div>
             <p className="modal-message">{confirm.message}</p>
             <div className="modal-actions">
-              <button type="button" className="btn btn-ghost" onClick={() => setConfirm(null)}>Nah, keep it</button>
-              <button type="button" className="btn btn-danger" onClick={confirm.onYes}>Delete it</button>
+              <button type="button" className="btn btn-ghost" onClick={() => setConfirm(null)}>Keep it</button>
+              <button type="button" className="btn btn-danger" onClick={confirm.onYes}>Delete</button>
             </div>
           </div>
         </div>
