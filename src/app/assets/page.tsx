@@ -175,8 +175,6 @@ export default function AssetsPage() {
     });
   }
 
-  if (loading) return <p className="sub">Loading…</p>;
-
   return (
     <main>
       {/* ── Toasts ── */}
@@ -224,7 +222,20 @@ export default function AssetsPage() {
           </button>
         </div>
 
-        {items.length === 0 ? (
+        {loading ? (
+          <div className="tracking-skeleton">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="skeleton-row">
+                <div className="skeleton-block" style={{ width: 36, height: 36, borderRadius: 'var(--radius-sm)' }} />
+                <div style={{ flex: 1 }}>
+                  <div className="skeleton-block" style={{ width: '40%', height: 13 }} />
+                  <div className="skeleton-block" style={{ width: '25%', height: 11, marginTop: 6 }} />
+                </div>
+                <div className="skeleton-block" style={{ width: 72, height: 13 }} />
+              </div>
+            ))}
+          </div>
+        ) : items.length === 0 ? (
           <div className="tracking-empty">
             <div className="tracking-empty-icon">🏦</div>
             <p>No assets tracked yet.</p>

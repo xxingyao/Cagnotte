@@ -2,6 +2,7 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
+import * as api from '@/lib/api';
 import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useStore } from './StoreProvider';
@@ -9,8 +10,8 @@ import { useStore } from './StoreProvider';
 const NAV_ITEMS = [
   { href: '/', label: 'Your groups', icon: '🏠' },
   { href: '/friends', label: 'Friends', icon: '👥' },
-  { href: '/investments', label: 'Investments', icon: '📈' },
-  { href: '/assets', label: 'Assets', icon: '🏦' },
+  { href: '/investments', label: 'Investments', icon: '📈', warm: '/me/investments' },
+  { href: '/assets', label: 'Assets', icon: '🏦', warm: '/me/assets' },
   { href: '/settings', label: 'Settings', icon: '⚙️' },
 ];
 
@@ -103,6 +104,9 @@ export function Sidebar() {
               href={item.href}
               className={`sidebar-link${pathname === item.href ? ' is-active' : ''}`}
               onClick={() => setMobileOpen(false)}
+              onMouseEnter={() => item.warm && api.prefetch(item.warm)}
+              onFocus={() => item.warm && api.prefetch(item.warm)}
+              onTouchStart={() => item.warm && api.prefetch(item.warm)}
               title={item.label}
             >
               <span className="sidebar-link-icon" aria-hidden="true">{item.icon}</span>

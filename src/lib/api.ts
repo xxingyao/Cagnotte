@@ -6,19 +6,78 @@ const API_BASE =
   'https://oxfhpuu8a8.execute-api.us-east-1.amazonaws.com/dev';
 
 const cache = new Map<string, { data: unknown; at: number }>();
+const inFlight = new Map<string, Promise<unknown>>();
 const CACHE_TTL = 60_000; // 1 minute
+const STORE_PREFIX = 'cagnotte:cache:';
+
+// sessionStorage survives a reload and a new tab in the same session, so a
+// refresh no longer means waiting on a cold Lambda again.
+function readStored(path: string): { data: unknown; at: number } | null {
+  try {
+    const raw = sessionStorage.getItem(STORE_PREFIX + path);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null; // SSR, private mode, or disabled storage — memory cache still works.
+  }
+}
+
+function writeStored(path: string, entry: { data: unknown; at: number }) {
+  try {
+    sessionStorage.setItem(STORE_PREFIX + path, JSON.stringify(entry));
+  } catch {
+    // Quota or unavailable — not worth failing the request over.
+  }
+}
+
+// One network call per path at a time: a hover-prefetch and the page's own
+// load would otherwise fire two identical requests.
+function fetchAndCache(path: string): Promise<unknown> {
+  const existing = inFlight.get(path);
+  if (existing) return existing;
+
+  const promise = request(path)
+    .then((data) => {
+      const entry = { data, at: Date.now() };
+      cache.set(path, entry);
+      writeStored(path, entry);
+      return data;
+    })
+    .finally(() => inFlight.delete(path));
+
+  inFlight.set(path, promise);
+  return promise;
+}
 
 async function cachedRequest(path: string): Promise<unknown> {
-  const hit = cache.get(path);
-  if (hit && Date.now() - hit.at < CACHE_TTL) return hit.data;
-  const data = await request(path);
-  cache.set(path, { data, at: Date.now() });
-  return data;
+  const hit = cache.get(path) ?? readStored(path);
+  if (hit) {
+    cache.set(path, hit);
+    if (Date.now() - hit.at < CACHE_TTL) return hit.data;
+    // Stale: paint what we have now, refresh in the background for next time.
+    void fetchAndCache(path).catch(() => {});
+    return hit.data;
+  }
+  return fetchAndCache(path);
+}
+
+/** Warm a path ahead of a navigation. Fire-and-forget. */
+export function prefetch(path: string) {
+  const hit = cache.get(path) ?? readStored(path);
+  if (hit && Date.now() - hit.at < CACHE_TTL) return;
+  void fetchAndCache(path).catch(() => {});
 }
 
 function invalidate(prefix: string) {
   for (const key of cache.keys()) {
     if (key.startsWith(prefix)) cache.delete(key);
+  }
+  try {
+    for (let i = sessionStorage.length - 1; i >= 0; i--) {
+      const key = sessionStorage.key(i);
+      if (key?.startsWith(STORE_PREFIX + prefix)) sessionStorage.removeItem(key);
+    }
+  } catch {
+    // Nothing persisted to clear.
   }
 }
 
