@@ -5,6 +5,7 @@ import * as api from '@/lib/api';
 import { CurrencySelect } from '@/components/CurrencySelect';
 import { decimalsFor, formatMoney, parseAmountToMinor } from '@/lib/money';
 import { getDefaultCurrency } from '@/lib/prefs';
+import { PortfolioChart } from '@/components/PortfolioChart';
 import {
   Position,
   avgCostMinor,
@@ -77,7 +78,17 @@ export default function InvestmentsPage() {
   const [totalCost, setTotalCost] = useState('');
   const [totalValue, setTotalValue] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
+  const [history, setHistory] = useState<api.HistoryPoint[]>([]);
+  const [chartCurrency, setChartCurrency] = useState<string | null>(null);
 
+  useEffect(() => {
+    api.getInvestmentHistory(180)
+      .then((points) => {
+        setHistory(points);
+        if (points.length > 0 && !chartCurrency) setChartCurrency(points[0].currency);
+      })
+      .catch(() => {}); // history is a nice-to-have; a failure here shouldn't block the page
+  }, []);
   function addToast(message: string, type: 'success' | 'error' = 'success') {
     const id = Date.now();
     setToasts((t) => [...t, { id, message, type }]);
@@ -306,6 +317,32 @@ export default function InvestmentsPage() {
         <p className="split-hint" style={{ marginTop: -8, marginBottom: 16 }}>
           Currencies are shown separately — converting them would need exchange rates.
         </p>
+      )}
+
+            {history.length > 0 && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-head">
+            <h2 className="card-title">Value over time</h2>
+            {totals.length > 1 && (
+              <div className="chart-currency-tabs">
+                {totals.map((t) => (
+                  <button
+                    key={t.currency}
+                    type="button"
+                    className={`chart-currency-tab${chartCurrency === t.currency ? ' is-active' : ''}`}
+                    onClick={() => setChartCurrency(t.currency)}
+                  >
+                    {t.currency}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <PortfolioChart
+            points={history.filter((p) => p.currency === chartCurrency).map((p) => ({ date: p.date, value: p.value, cost: p.cost }))}
+            currency={chartCurrency ?? 'SGD'}
+          />
+        </div>
       )}
 
       <div className="tracking-table-wrap">

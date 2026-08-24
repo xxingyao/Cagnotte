@@ -429,6 +429,21 @@ export interface ApiInvestment {
   updatedAt: string;
 }
 
+export interface HistoryPoint {
+  date: string;
+  currency: string;
+  value: number;
+  cost: number;
+}
+
+export async function getInvestmentHistory(days = 180): Promise<HistoryPoint[]> {
+  const to = new Date().toISOString().slice(0, 10);
+  const from = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const json = await cachedRequest(`/me/investments/history?from=${from}&to=${to}`);
+  if (!Array.isArray(json)) throw new Error('Server did not return a history list.');
+  return json as HistoryPoint[];
+}
+
 // ─── Assets ─────────────────────────────────────────────────────────────────
 
 export interface ApiAsset {
