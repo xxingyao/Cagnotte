@@ -13,7 +13,7 @@ export interface Position {
   type: string;
   icon: string;
   currency: string;
-  /** 0 for cash-like accounts (CPF, robo balances) that have no unit count. */
+  symbol?: string;
   quantity: number;
   costMinor: number;
   valueMinor: number;
@@ -84,4 +84,18 @@ export function formatUnitPrice(minor: number | null, currency: string): string 
   const major = minor / 10 ** decimals;
   const places = major !== 0 && Math.abs(major) < 1 ? 6 : Math.max(decimals, 2);
   return `${major.toFixed(places)} ${currency}`;
+}
+
+export interface ClosedPosition {
+  id: string;
+  name: string;
+  currency: string;
+  quantity: number;
+  costMinor: number;
+  proceedsMinor: number;
+  closedAt: string;
+}
+
+export function realizedGainMinor(c: ClosedPosition): number {
+  return c.proceedsMinor - c.costMinor;
 }

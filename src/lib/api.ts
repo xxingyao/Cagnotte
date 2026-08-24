@@ -378,7 +378,39 @@ export interface ApiInvestment {
   shares: number;
   costBasis: number;
   currentValue: number;
+  currency?: string;
+  symbol?: string;
+  status?: 'open' | 'closed';
+  proceeds?: number;
+  closedAt?: string;
   updatedAt: string;
+}
+
+export interface ApiFxRates {
+  base: string;
+  rates: Record<string, number>;
+  fetchedAt: string;
+}
+
+export async function getFxRates(): Promise<ApiFxRates> {
+  return (await cachedRequest('/fx/rates')) as ApiFxRates;
+}
+
+export async function closeInvestment(
+  investmentId: string,
+  input: { quantity?: number; proceeds: number },
+): Promise<ApiInvestment> {
+  const json = await request(`/me/investments/${encodeURIComponent(investmentId)}/close`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  invalidate('/me/investments');
+  return (json as { closed: ApiInvestment }).closed;
+}
+
+export async function getInvestmentQuote(investmentId: string): Promise<{ symbol: string; price: number }> {
+  return (await request(`/me/investments/${encodeURIComponent(investmentId)}/quote`)) as { symbol: string; price: number };
 }
 
 export async function listInvestments(): Promise<ApiInvestment[]> {
