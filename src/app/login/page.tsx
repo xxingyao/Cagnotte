@@ -180,7 +180,21 @@ export default function LoginPage() {
               />
             </label>
             <button type="submit" className="btn login-btn" disabled={busy}>
-              {busy ? 'Signing in…' : 'Sign in'}
+              {busy ? (
+                <>
+                  <span className="btn-spinner" aria-hidden="true" />
+                  Signing in…
+                </>
+              ) : (
+                <>
+                  Sign in
+                  <svg className="btn-arrow" viewBox="0 0 16 16" width="15" height="15"
+                    fill="none" aria-hidden="true">
+                    <path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5" stroke="currentColor"
+                      strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </>
+              )}
             </button>
             <div className="login-links">
               <button

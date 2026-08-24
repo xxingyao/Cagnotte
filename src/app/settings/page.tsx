@@ -249,7 +249,12 @@ export default function SettingsPage() {
           <h2 className="card-title">Account</h2>
         </div>
         <button type="button" className="btn-signout" onClick={logout}>
-          <span aria-hidden="true">🚪</span>
+          <svg viewBox="0 0 16 16" width="15" height="15" fill="none" aria-hidden="true">
+            <path d="M6 14H3.5A1.5 1.5 0 0 1 2 12.5v-9A1.5 1.5 0 0 1 3.5 2H6"
+              stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+            <path d="M10.5 11 14 8l-3.5-3M14 8H6" stroke="currentColor"
+              strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
           Sign out
         </button>
         <p className="split-hint" style={{ marginTop: 10, marginBottom: 0 }}>
