@@ -433,7 +433,7 @@ export async function addInvestment(
 
 export async function editInvestment(
   investmentId: string,
-  input: Omit<ApiInvestment, 'investmentId' | 'updatedAt'>,
+  input: Partial<Omit<ApiInvestment, 'investmentId' | 'updatedAt'>>,
 ): Promise<void> {
   await request(`/me/investments/${encodeURIComponent(investmentId)}`, {
     method: 'PUT',
@@ -457,8 +457,22 @@ export interface ApiInvestment {
   shares: number;
   costBasis: number;
   currentValue: number;
-  currency?: string;   // absent on rows created before multi-currency
+  currency?: string;
+  symbol?: string;
+  category?: string;
+  status?: 'open' | 'closed';
+  proceeds?: number;
+  closedAt?: string;
   updatedAt: string;
+}
+
+export interface TickerResult { symbol: string; name: string; type: string; }
+
+export async function searchTickers(query: string): Promise<TickerResult[]> {
+  if (!query.trim()) return [];
+  const json = await request(`/me/investments/search?q=${encodeURIComponent(query)}`);
+  if (!Array.isArray(json)) return [];
+  return json as TickerResult[];
 }
 
 export interface HistoryPoint {

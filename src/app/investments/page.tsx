@@ -23,14 +23,32 @@ interface ConfirmState { message: string; onYes: () => void; }
 type EntryMode = 'unit' | 'total';
 type ViewTab = 'open' | 'closed';
 
-const ACCOUNT_TYPES = [
-  { value: 'brokerage', label: 'Brokerage', icon: '💹' },
-  { value: 'retirement', label: 'Retirement (CPF/401k)', icon: '🏛️' },
-  { value: 'robo', label: 'Robo-advisor', icon: '🤖' },
-  { value: 'crypto', label: 'Crypto', icon: '₿' },
-  { value: 'etf', label: 'ETF / Index Fund', icon: '📊' },
-  { value: 'other', label: 'Other', icon: '📁' },
+/**
+ * Top-level investment categories. `tradable` categories are identified by a
+ * ticker symbol instead of a typed name — the system looks the name up.
+ * `kinds` gives a category its own sub-type picker (e.g. paper vs physical
+ * gold) instead of a free-text name for that slot.
+ */
+const CATEGORIES: { key: string; label: string; icon: string; tradable: boolean; kinds: string[] | null }[] = [
+  { key: 'stocks', label: 'Stocks & ETFs', icon: '💹', tradable: true, kinds: null },
+  { key: 'crypto', label: 'Crypto', icon: '₿', tradable: false, kinds: null },
+  { key: 'metals', label: 'Precious Metals', icon: '🪙', tradable: false, kinds: ['Paper Gold', 'Physical Gold', 'Paper Silver', 'Physical Silver'] },
+  { key: 'collectibles', label: 'Collectibles', icon: '🎴', tradable: false, kinds: ['Trading Cards (e.g. Pokémon)', 'Watches', 'Art', 'Other Collectible'] },
+  { key: 'retirement', label: 'Retirement', icon: '🏛️', tradable: false, kinds: ['CPF Ordinary Account', 'CPF Special Account', 'CPF MediSave', '401(k)', 'IRA', 'Other Retirement'] },
+  { key: 'robo', label: 'Robo-advisor', icon: '🤖', tradable: false, kinds: null },
+  { key: 'other', label: 'Other', icon: '📁', tradable: false, kinds: null },
 ];
+
+// Rows created before this change stored a raw slug in `type` — upgrade those
+// to a friendly label for display only; new rows never need this map.
+const LEGACY_TYPE_LABELS: Record<string, string> = {
+  brokerage: 'Brokerage', retirement: 'Retirement (CPF/401k)', robo: 'Robo-advisor',
+  crypto: 'Crypto', etf: 'ETF / Index Fund', other: 'Other',
+};
+
+function displayType(type: string): string {
+  return LEGACY_TYPE_LABELS[type] ?? type;
+}
 
 function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
@@ -52,6 +70,7 @@ function fromWire(w: api.ApiInvestment, fallbackCurrency: string): Position {
     icon: w.icon,
     currency,
     symbol: w.symbol || undefined,
+    category: w.category || undefined,
     quantity: w.shares,
     costMinor: toMinor(w.costBasis, currency),
     valueMinor: toMinor(w.currentValue, currency),
@@ -68,6 +87,7 @@ function closedFromWire(w: api.ApiInvestment, fallbackCurrency: string): ClosedP
     costMinor: toMinor(w.costBasis, currency),
     proceedsMinor: toMinor(w.proceeds ?? 0, currency),
     closedAt: w.closedAt || '',
+    category: w.category || undefined,
   };
 }
 
@@ -85,16 +105,28 @@ export default function InvestmentsPage() {
   const [closeTarget, setCloseTarget] = useState<Position | null>(null);
   const [closeQty, setCloseQty] = useState('');
   const [closeProceeds, setCloseProceeds] = useState('');
+  const [proceedsTouched, setProceedsTouched] = useState(false);
   const [closing, setClosing] = useState(false);
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [history, setHistory] = useState<api.HistoryPoint[]>([]);
   const [chartCurrency, setChartCurrency] = useState<string | null>(null);
 
+  // Editing a closed record's realized amount after the fact
+  const [editClosedTarget, setEditClosedTarget] = useState<ClosedPosition | null>(null);
+  const [editClosedProceeds, setEditClosedProceeds] = useState('');
+  const [savingClosedEdit, setSavingClosedEdit] = useState(false);
+
   // Form
+  const [categoryKey, setCategoryKey] = useState('stocks');
+  const [kind, setKind] = useState('');
   const [name, setName] = useState('');
   const [symbol, setSymbol] = useState('');
-  const [type, setType] = useState('brokerage');
+  const [showTickerSearch, setShowTickerSearch] = useState(true);
+  const [tickerQuery, setTickerQuery] = useState('');
+  const [tickerResults, setTickerResults] = useState<api.TickerResult[]>([]);
+  const [searchingTicker, setSearchingTicker] = useState(false);
+  const [manualSymbolMode, setManualSymbolMode] = useState(false);
   const [currency, setCurrency] = useState('SGD');
   const [mode, setMode] = useState<EntryMode>('unit');
   const [quantity, setQuantity] = useState('');
@@ -105,6 +137,7 @@ export default function InvestmentsPage() {
   const [formError, setFormError] = useState<string | null>(null);
 
   const defaultCurrency = getDefaultCurrency();
+  const category = CATEGORIES.find((c) => c.key === categoryKey) ?? CATEGORIES[0];
 
   function addToast(message: string, type: 'success' | 'error' = 'success') {
     const id = Date.now();
@@ -124,7 +157,6 @@ export default function InvestmentsPage() {
       .catch((e) => addToast((e as Error).message, 'error'))
       .finally(() => setLoading(false));
 
-    // A missing rate just means the combined total doesn't render — not fatal.
     api.getFxRates().then(setFx).catch(() => {});
 
     api.getInvestmentHistory(180)
@@ -134,6 +166,21 @@ export default function InvestmentsPage() {
       })
       .catch(() => {});
   }, []);
+
+  /* ── Ticker search, debounced ── */
+  useEffect(() => {
+    if (!category.tradable || manualSymbolMode || !showTickerSearch) return;
+    const q = tickerQuery.trim();
+    if (q.length < 1) { setTickerResults([]); return; }
+    setSearchingTicker(true);
+    const handle = setTimeout(() => {
+      api.searchTickers(q)
+        .then(setTickerResults)
+        .catch(() => setTickerResults([]))
+        .finally(() => setSearchingTicker(false));
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [tickerQuery, category.tradable, manualSymbolMode, showTickerSearch]);
 
   /* ── Combined total in the user's default currency ── */
 
@@ -168,11 +215,17 @@ export default function InvestmentsPage() {
 
   function resetForm(seed?: Position) {
     setFormError(null);
+    setTickerQuery('');
+    setTickerResults([]);
+    setManualSymbolMode(false);
+
     if (!seed) {
       setEditId(null);
+      setCategoryKey('stocks');
+      setKind('');
       setName('');
       setSymbol('');
-      setType('brokerage');
+      setShowTickerSearch(true);
       setCurrency(getDefaultCurrency());
       setMode('unit');
       setQuantity('');
@@ -182,10 +235,14 @@ export default function InvestmentsPage() {
       setTotalValue('');
       return;
     }
+
     setEditId(seed.id);
+    const cat = CATEGORIES.find((c) => c.key === seed.category) ?? (seed.symbol ? CATEGORIES[0] : CATEGORIES[CATEGORIES.length - 1]);
+    setCategoryKey(cat.key);
+    setKind(cat.kinds?.includes(seed.type) ? seed.type : '');
     setName(seed.name);
     setSymbol(seed.symbol || '');
-    setType(seed.type);
+    setShowTickerSearch(cat.tradable && !seed.symbol);
     setCurrency(seed.currency);
     setMode(seed.quantity > 0 ? 'unit' : 'total');
     setQuantity(seed.quantity > 0 ? String(seed.quantity) : '');
@@ -201,6 +258,23 @@ export default function InvestmentsPage() {
 
   function openAdd() { resetForm(); setShowModal(true); }
   function openEdit(item: Position) { resetForm(item); setShowModal(true); }
+
+  function pickTicker(r: api.TickerResult) {
+    setSymbol(r.symbol);
+    setName(r.name);
+    setShowTickerSearch(false);
+    setTickerQuery('');
+    setTickerResults([]);
+  }
+
+  function useManualSymbol() {
+    const s = tickerQuery.trim().toUpperCase();
+    if (!s) return;
+    setSymbol(s);
+    setName(s); // no lookup confirmed a friendly name — the symbol itself is the best default
+    setShowTickerSearch(false);
+    setTickerQuery('');
+  }
 
   function derive(): { quantity: number; costMinor: number; valueMinor: number } | null {
     if (mode === 'total') {
@@ -245,33 +319,47 @@ export default function InvestmentsPage() {
   })();
 
   async function save() {
+    if (category.tradable && !symbol) {
+      setFormError('Search for a ticker and pick one, or enter the exact symbol yourself.');
+      return;
+    }
+    if (category.kinds && !kind) {
+      setFormError(`Choose a ${category.label.toLowerCase()} type.`);
+      return;
+    }
+    if (!category.tradable && !category.kinds && !name.trim()) {
+      setFormError('Give this holding a name.');
+      return;
+    }
+
     const derived = derive();
     if (!derived) return;
 
     setSaving(true);
     setFormError(null);
-    const icon = ACCOUNT_TYPES.find((t) => t.value === type)?.icon ?? '📁';
-    const position: Omit<Position, 'id'> = {
-      name: name.trim() || 'Untitled',
-      type, icon, currency,
-      symbol: symbol.trim() || undefined,
-      ...derived,
-    };
+
+    const finalName = category.tradable ? name : name.trim();
+    const finalType = category.kinds ? kind : category.label;
+
     const wire = {
-      name: position.name,
-      type: position.type,
-      icon: position.icon,
-      currency: position.currency,
-      symbol: position.symbol,
-      shares: position.quantity,
-      costBasis: toMajor(position.costMinor, currency),
-      currentValue: toMajor(position.valueMinor, currency),
+      name: finalName,
+      type: finalType,
+      icon: category.icon,
+      currency,
+      symbol: category.tradable ? symbol : undefined,
+      category: category.key,
+      shares: derived.quantity,
+      costBasis: toMajor(derived.costMinor, currency),
+      currentValue: toMajor(derived.valueMinor, currency),
     };
 
     try {
       if (editId) {
         await api.editInvestment(editId, wire);
-        setItems((prev) => prev.map((i) => (i.id === editId ? { id: editId, ...position } : i)));
+        setItems((prev) => prev.map((i) => (i.id === editId ? {
+          id: editId, name: finalName, type: finalType, icon: category.icon, currency,
+          symbol: wire.symbol, category: category.key, ...derived,
+        } : i)));
         addToast(pick([
           'Updated! Your portfolio thanks you. 📊',
           "Saved! Numbers don't lie… unless you entered them wrong.",
@@ -314,7 +402,7 @@ export default function InvestmentsPage() {
     });
   }
 
-    function confirmRemoveClosed(c: ClosedPosition) {
+  function confirmRemoveClosed(c: ClosedPosition) {
     setConfirm({
       message: pick([
         `Delete the closed record for "${c.name}"? This only removes it from your history.`,
@@ -334,19 +422,31 @@ export default function InvestmentsPage() {
     });
   }
 
-  /* ── Close position ── */
+  /* ── Close position — proceeds default to current value, editable ── */
 
   function openClose(item: Position) {
     setCloseTarget(item);
+    setProceedsTouched(false);
     setCloseQty(item.quantity > 0 ? String(item.quantity) : '');
-    setCloseProceeds('');
+    setCloseProceeds(toMajor(item.valueMinor, item.currency).toFixed(decimalsFor(item.currency)));
   }
+
+  // Recomputes the suggested proceeds as the quantity changes — but only
+  // until the user actually types into the proceeds field themselves.
+  useEffect(() => {
+    if (!closeTarget || proceedsTouched) return;
+    const fullQty = closeTarget.quantity > 0 ? closeTarget.quantity : 1;
+    const qty = closeTarget.quantity > 0 ? (Number(closeQty) || 0) : fullQty;
+    const unitValueMinor = closeTarget.valueMinor / fullQty;
+    const proceedsMinor = Math.round(unitValueMinor * qty);
+    setCloseProceeds(toMajor(proceedsMinor, closeTarget.currency).toFixed(decimalsFor(closeTarget.currency)));
+  }, [closeQty, closeTarget, proceedsTouched]);
 
   async function submitClose() {
     if (!closeTarget) return;
     const proceeds = parseAmountToMinor(closeProceeds || '', closeTarget.currency);
     if (proceeds === null) {
-      addToast('Enter the total amount you received, e.g. 1500.00', 'error');
+      addToast('Enter a plain number, e.g. 1500.00', 'error');
       return;
     }
     const qty = closeTarget.quantity > 0 ? Number(closeQty) : undefined;
@@ -361,8 +461,6 @@ export default function InvestmentsPage() {
         quantity: qty,
         proceeds: toMajor(proceeds, closeTarget.currency),
       });
-      // Re-pull everything rather than reconstruct the partial-close math
-      // client-side and risk drifting from what the server actually stored.
       const fallback = getDefaultCurrency();
       const list = await api.listInvestments();
       setItems(list.filter((w) => w.status !== 'closed').map((w) => fromWire(w, fallback)));
@@ -380,6 +478,35 @@ export default function InvestmentsPage() {
     }
   }
 
+  /* ── Edit a closed record's realized amount after the fact ── */
+
+  function openEditClosed(c: ClosedPosition) {
+    setEditClosedTarget(c);
+    setEditClosedProceeds(toMajor(c.proceedsMinor, c.currency).toString());
+  }
+
+  async function saveClosedEdit() {
+    if (!editClosedTarget) return;
+    const proceeds = parseAmountToMinor(editClosedProceeds || '', editClosedTarget.currency);
+    if (proceeds === null) {
+      addToast('Enter a plain number, e.g. 1500.00', 'error');
+      return;
+    }
+    setSavingClosedEdit(true);
+    try {
+      await api.editInvestment(editClosedTarget.id, {
+        proceeds: toMajor(proceeds, editClosedTarget.currency),
+      });
+      setClosed((prev) => prev.map((c) => (c.id === editClosedTarget.id ? { ...c, proceedsMinor: proceeds } : c)));
+      setEditClosedTarget(null);
+      addToast('Realized amount updated.');
+    } catch (e) {
+      addToast((e as Error).message, 'error');
+    } finally {
+      setSavingClosedEdit(false);
+    }
+  }
+
   /* ── Live quote ── */
 
   async function refreshQuote(item: Position) {
@@ -389,12 +516,7 @@ export default function InvestmentsPage() {
       const { price } = await api.getInvestmentQuote(item.id);
       const priceMinorValue = toMinor(price, item.currency);
       const newValueMinor = Math.round(priceMinorValue * item.quantity);
-      await api.editInvestment(item.id, {
-        name: item.name, type: item.type, icon: item.icon, currency: item.currency, symbol: item.symbol,
-        shares: item.quantity,
-        costBasis: toMajor(item.costMinor, item.currency),
-        currentValue: toMajor(newValueMinor, item.currency),
-      });
+      await api.editInvestment(item.id, { currentValue: toMajor(newValueMinor, item.currency) });
       setItems((prev) => prev.map((p) => (p.id === item.id ? { ...p, valueMinor: newValueMinor } : p)));
       addToast(`${item.symbol}: ${formatMoney(priceMinorValue, item.currency)}/share`);
     } catch (e) {
@@ -411,8 +533,6 @@ export default function InvestmentsPage() {
       return;
     }
     setRefreshingAll(true);
-    // Sequential, not Promise.all — free-tier quote APIs cap requests per
-    // minute, and a burst of parallel calls is the fastest way to get rate-limited.
     for (const item of quotable) {
       await refreshQuote(item);
       await new Promise((r) => setTimeout(r, 300));
@@ -572,7 +692,7 @@ export default function InvestmentsPage() {
                                 {item.symbol && <span className="chip" style={{ marginLeft: 6 }}>{item.symbol}</span>}
                               </div>
                               <div className="tracking-type">
-                                {ACCOUNT_TYPES.find((t) => t.value === item.type)?.label} · {item.currency}
+                                {displayType(item.type)} · {item.currency}
                               </div>
                             </div>
                           </div>
@@ -654,6 +774,11 @@ export default function InvestmentsPage() {
                       <td className="hide-mobile">{c.closedAt}</td>
                       <td>
                         <div className="tracking-actions">
+                          <button type="button" className="icon-btn icon-btn-sm" onClick={() => openEditClosed(c)} title="Edit realized amount">
+                            <svg viewBox="0 0 20 20" width="12" height="12" fill="none" aria-hidden="true">
+                              <path d="M13.5 3.5l3 3L6 17H3v-3L13.5 3.5z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                          </button>
                           <button type="button" className="icon-btn icon-btn-sm is-danger" onClick={() => confirmRemoveClosed(c)} title="Delete">
                             <svg viewBox="0 0 20 20" width="12" height="12" fill="none" aria-hidden="true">
                               <path d="M5 5l10 10M15 5 5 15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
@@ -680,28 +805,73 @@ export default function InvestmentsPage() {
             </div>
 
             <label className="field">
-              <span className="field-label">Name</span>
-              <input className="input" value={name} onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. NVIDIA, or CPF Ordinary Account" autoFocus />
+              <span className="field-label">Category</span>
+              <select className="select" value={categoryKey} onChange={(e) => { setCategoryKey(e.target.value); setKind(''); }}>
+                {CATEGORIES.map((c) => <option key={c.key} value={c.key}>{c.icon} {c.label}</option>)}
+              </select>
             </label>
 
-            <div className="grid-2">
+            {category.kinds && (
               <label className="field">
                 <span className="field-label">Type</span>
-                <select className="select" value={type} onChange={(e) => setType(e.target.value)}>
-                  {ACCOUNT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.icon} {t.label}</option>)}
+                <select className="select" value={kind} onChange={(e) => setKind(e.target.value)}>
+                  <option value="" disabled>Choose one…</option>
+                  {category.kinds.map((k) => <option key={k} value={k}>{k}</option>)}
                 </select>
               </label>
+            )}
+
+            {category.tradable ? (
+              showTickerSearch ? (
+                <div className="field">
+                  <span className="field-label">Ticker symbol</span>
+                  <input className="input" value={tickerQuery} onChange={(e) => setTickerQuery(e.target.value)}
+                    placeholder="Search a company or symbol — e.g. NVIDIA, AAPL" autoFocus />
+                  {searchingTicker && <p className="split-hint" style={{ marginTop: 6 }}>Searching…</p>}
+                  {!searchingTicker && tickerResults.length > 0 && (
+                    <ul className="currency-list" style={{ marginTop: 8 }}>
+                      {tickerResults.map((r) => (
+                        <li key={r.symbol} className="currency-row">
+                          <button type="button" className="currency-pick" onClick={() => pickTicker(r)}>
+                            <span className="currency-code">{r.symbol}</span>
+                            <span className="currency-name">{r.name}</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <p className="split-hint" style={{ marginTop: 8, marginBottom: 0 }}>
+                    Can&apos;t find it (common for non-US listings, e.g. SGX)?{' '}
+                    <button type="button" className="link-btn" onClick={useManualSymbol}>
+                      Use &quot;{tickerQuery.trim() || '…'}&quot; as the exact symbol
+                    </button>
+                    . Live price refresh isn&apos;t guaranteed for every market.
+                  </p>
+                </div>
+              ) : (
+                <div className="field">
+                  <span className="field-label">Ticker symbol</span>
+                  <div className="currency-trigger" style={{ cursor: 'default' }}>
+                    <span className="currency-code">{symbol}</span>
+                    <span className="currency-name">{name}</span>
+                    <button type="button" className="currency-trigger-action"
+                      onClick={() => { setShowTickerSearch(true); }} style={{ background: 'none', border: 0, cursor: 'pointer' }}>
+                      Change
+                    </button>
+                  </div>
+                </div>
+              )
+            ) : (
               <label className="field">
-                <span className="field-label">Currency</span>
-                <CurrencySelect value={currency} onChange={setCurrency} />
+                <span className="field-label">Name</span>
+                <input className="input" value={name} onChange={(e) => setName(e.target.value)}
+                  placeholder={category.kinds ? 'e.g. 1oz Gold Bar, or a specific card name' : 'e.g. Tiger Brokerage'} autoFocus />
               </label>
-            </div>
+            )}
 
             <label className="field">
-              <span className="field-label">Ticker symbol (optional)</span>
-              <input className="input" value={symbol} onChange={(e) => setSymbol(e.target.value.toUpperCase())}
-                placeholder="e.g. NVDA — enables the ↻ price refresh" />
+              <span className="field-label">Currency</span>
+              <CurrencySelect value={currency} onChange={setCurrency} />
             </label>
 
             <div className="field">
@@ -778,8 +948,8 @@ export default function InvestmentsPage() {
               <button type="button" className="modal-close" onClick={() => setCloseTarget(null)} aria-label="Close">×</button>
             </div>
             <p className="modal-message">
-              Record what you actually received. This locks in realized profit or loss —
-              it&apos;s kept separate from the unrealized total above.
+              Proceeds default to this position&apos;s last known value. Edit it if the actual sale differed —
+              this locks in realized profit or loss, kept separate from unrealized totals.
             </p>
             {closeTarget.quantity > 0 && (
               <label className="field">
@@ -788,14 +958,37 @@ export default function InvestmentsPage() {
               </label>
             )}
             <label className="field">
-              <span className="field-label">Total proceeds received</span>
+              <span className="field-label">Total proceeds</span>
               <input className="input" value={closeProceeds} inputMode="decimal"
-                onChange={(e) => setCloseProceeds(e.target.value)} placeholder="0.00" autoFocus />
+                onChange={(e) => { setCloseProceeds(e.target.value); setProceedsTouched(true); }} placeholder="0.00" />
             </label>
             <div className="modal-actions">
               <button type="button" className="btn btn-ghost" onClick={() => setCloseTarget(null)}>Cancel</button>
               <button type="button" className="btn" onClick={submitClose} disabled={closing}>
                 {closing ? 'Closing…' : 'Close position'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Edit closed record's realized amount ── */}
+      {editClosedTarget && (
+        <div className="modal-backdrop" onClick={() => setEditClosedTarget(null)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2 className="modal-title">Edit &quot;{editClosedTarget.name}&quot;</h2>
+              <button type="button" className="modal-close" onClick={() => setEditClosedTarget(null)} aria-label="Close">×</button>
+            </div>
+            <label className="field">
+              <span className="field-label">Actual proceeds received</span>
+              <input className="input" value={editClosedProceeds} inputMode="decimal"
+                onChange={(e) => setEditClosedProceeds(e.target.value)} autoFocus />
+            </label>
+            <div className="modal-actions">
+              <button type="button" className="btn btn-ghost" onClick={() => setEditClosedTarget(null)}>Cancel</button>
+              <button type="button" className="btn" onClick={saveClosedEdit} disabled={savingClosedEdit}>
+                {savingClosedEdit ? 'Saving…' : 'Save'}
               </button>
             </div>
           </div>

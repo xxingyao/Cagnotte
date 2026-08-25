@@ -14,6 +14,7 @@ export interface Position {
   icon: string;
   currency: string;
   symbol?: string;
+  category?: string;
   quantity: number;
   costMinor: number;
   valueMinor: number;
@@ -94,8 +95,8 @@ export interface ClosedPosition {
   costMinor: number;
   proceedsMinor: number;
   closedAt: string;
+  category?: string;
 }
-
 export function realizedGainMinor(c: ClosedPosition): number {
   return c.proceedsMinor - c.costMinor;
 }
