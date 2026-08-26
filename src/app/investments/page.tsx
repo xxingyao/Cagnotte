@@ -397,6 +397,9 @@ export default function InvestmentsPage() {
     setFetchingPrice(true);
     try {
       const q = await api.getQuoteBySymbol(sym, currency);
+      if (typeof q?.price !== 'number') {
+        throw new Error('No price returned for that symbol.');
+      }
       const p = q.price.toFixed(decimalsFor(currency));
       setUnitPrice(p);
       setPriceIsLive(true);
