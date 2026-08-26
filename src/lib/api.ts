@@ -555,3 +555,14 @@ export async function putPreferences(patch: ApiPreferences): Promise<void> {
   });
   invalidate('/me/preferences');
 }
+
+export interface QuoteRefreshResult {
+  updated: { investmentId: string; symbol: string; price: number }[];
+  failed: { symbol: string; reason: string }[];
+}
+
+export async function refreshAllQuotes(): Promise<QuoteRefreshResult> {
+  const json = await request('/me/investments/quotes', { method: 'POST' });
+  invalidate('/me/investments');
+  return json as QuoteRefreshResult;
+}

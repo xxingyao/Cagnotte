@@ -1,7 +1,6 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { formatMoney } from '@/lib/money';
 
 interface Point { date: string; value: number; cost: number }
 
@@ -22,30 +21,30 @@ export function PortfolioChart({ points, currency }: Props) {
     [points],
   );
 
-  if (sorted.length < 2) {
-    return (
-      <div className="chart-empty">
-        Track a value change on another day to start seeing a trend here.
-      </div>
-    );
+  if (sorted.length === 0) {
+    return <div className="chart-empty">No history recorded yet.</div>;
   }
 
-  const values = sorted.map((p) => p.value);
+  // A single point can't draw a line — duplicate it so the chart renders a
+  // flat baseline rather than an empty box, and say so below.
+  const series = sorted.length === 1 ? [sorted[0], { ...sorted[0] }] : sorted;
+
+  const values = series.map((p) => p.value);
   const min = Math.min(...values, 0);
   const max = Math.max(...values, 1);
   const range = max - min || 1;
 
-  const xAt = (i: number) => PAD + (i / (sorted.length - 1)) * (WIDTH - PAD * 2);
+  const xAt = (i: number) => PAD + (i / (series.length - 1)) * (WIDTH - PAD * 2);
   const yAt = (v: number) => HEIGHT - PAD - ((v - min) / range) * (HEIGHT - PAD * 2);
 
-  const linePath = sorted.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xAt(i)} ${yAt(p.value)}`).join(' ');
-  const areaPath = `${linePath} L ${xAt(sorted.length - 1)} ${HEIGHT - PAD} L ${xAt(0)} ${HEIGHT - PAD} Z`;
+  const linePath = series.map((p, i) => `${i === 0 ? 'M' : 'L'} ${xAt(i)} ${yAt(p.value)}`).join(' ');
+  const areaPath = `${linePath} L ${xAt(series.length - 1)} ${HEIGHT - PAD} L ${xAt(0)} ${HEIGHT - PAD} Z`;
 
-  const first = sorted[0].value;
-  const last = sorted[sorted.length - 1].value;
+  const first = series[0].value;
+  const last = series[series.length - 1].value;
   const up = last >= first;
 
-  const hover = hoverIdx !== null ? sorted[hoverIdx] : null;
+  const hover = hoverIdx !== null ? series[hoverIdx] : null;
 
   return (
     <div className="chart-wrap">
@@ -61,12 +60,12 @@ export function PortfolioChart({ points, currency }: Props) {
         <path d={linePath} fill="none" stroke={up ? 'var(--positive)' : 'var(--negative)'} strokeWidth="2" />
 
         {/* Wide invisible hit targets — easier to hover than the 2px line itself. */}
-        {sorted.map((p, i) => (
+        {series.map((p, i) => (
           <rect
-            key={p.date}
-            x={xAt(i) - (WIDTH / sorted.length) / 2}
+            key={`${p.date}-${i}`}
+            x={xAt(i) - (WIDTH / series.length) / 2}
             y={0}
-            width={WIDTH / sorted.length}
+            width={WIDTH / series.length}
             height={HEIGHT}
             fill="transparent"
             onMouseEnter={() => setHoverIdx(i)}
@@ -88,16 +87,22 @@ export function PortfolioChart({ points, currency }: Props) {
       <div className="chart-tooltip">
         {hover ? (
           <>
-            <strong>{formatMoney(hover.value, currency)}</strong>
+            <strong>{currency} {hover.value.toFixed(2)}</strong>
             <span className="sub">{hover.date}</span>
           </>
         ) : (
           <>
-            <strong>{formatMoney(last, currency)}</strong>
-            <span className="sub">Latest · {sorted[sorted.length - 1].date}</span>
+            <strong>{currency} {last.toFixed(2)}</strong>
+            <span className="sub">Latest · {series[series.length - 1].date}</span>
           </>
         )}
       </div>
+
+      {sorted.length === 1 && (
+        <p className="split-hint" style={{ marginTop: 8 }}>
+          Only one snapshot so far — the line fills in as more are recorded.
+        </p>
+      )}
     </div>
   );
 }
