@@ -540,6 +540,7 @@ export interface ApiPreferences {
   groupCategories?: Record<string, string>;
   customCategories?: { id: string; label: string; order: number }[];
   updatedAt?: string;
+  investmentCategories?: { key: string; label: string; icon: string; enabled: boolean; custom?: boolean; hasUnits?: boolean }[];
 }
 
 export async function getPreferences(): Promise<ApiPreferences> {

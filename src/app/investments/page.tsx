@@ -4,7 +4,13 @@ import { useEffect, useMemo, useState } from 'react';
 import * as api from '@/lib/api';
 import { CurrencySelect } from '@/components/CurrencySelect';
 import { decimalsFor, formatMoney, parseAmountToMinor } from '@/lib/money';
-import { getDefaultCurrency } from '@/lib/prefs';
+import {
+  getDefaultCurrency,
+  getInvestmentCategories,
+  setInvestmentCategories,
+  onPrefsChange,
+  type InvCategory,
+} from '@/lib/prefs';
 import { convert, type FxRates } from '@/lib/fx';
 import { PortfolioChart } from '@/components/PortfolioChart';
 import {
@@ -26,34 +32,36 @@ const REFRESH_COOLDOWN_MS = 60_000;
 const COOLDOWN_KEY = 'cagnotte:last-price-refresh';
 
 /**
- * Investment categories, each rendering as its own section with its own add
- * button — so a holding's category comes from where you added it, never a
- * dropdown.
- *
- * `tradable` → identified by ticker, price auto-fetched.
- * `autoPriced` → price comes from a derived symbol (gold/silver spot).
- * `hasUnits` → false for balance-style holdings like CPF, where "units" is
- *   meaningless and the form asks for amounts directly.
+ * Behaviour that can't be user-configured — which categories fetch prices and
+ * how they're identified. Labels and icons are overridable; these flags aren't.
  */
-const CATEGORIES: {
-  key: string; label: string; icon: string;
-  tradable: boolean; autoPriced: boolean; hasUnits: boolean;
-  kinds: string[] | null;
-}[] = [
-  { key: 'stocks', label: 'Stocks & ETFs', icon: '💹', tradable: true, autoPriced: true, hasUnits: true, kinds: null },
-  { key: 'crypto', label: 'Crypto', icon: '₿', tradable: false, autoPriced: false, hasUnits: true, kinds: null },
-  { key: 'metals', label: 'Precious Metals', icon: '🪙', tradable: false, autoPriced: true, hasUnits: true, kinds: ['Paper Gold', 'Physical Gold', 'Paper Silver', 'Physical Silver'] },
-  { key: 'collectibles', label: 'Collectibles', icon: '🎴', tradable: false, autoPriced: false, hasUnits: true, kinds: ['Trading Cards (e.g. Pokémon)', 'Watches', 'Art', 'Other Collectible'] },
-  { key: 'retirement', label: 'Retirement', icon: '🏛️', tradable: false, autoPriced: false, hasUnits: false, kinds: ['CPF Ordinary Account', 'CPF Special Account', 'CPF MediSave', '401(k)', 'IRA', 'Other Retirement'] },
-  { key: 'robo', label: 'Robo-advisor', icon: '🤖', tradable: false, autoPriced: false, hasUnits: false, kinds: null },
-  { key: 'other', label: 'Other', icon: '📁', tradable: false, autoPriced: false, hasUnits: false, kinds: null },
+const BUILTIN: Record<string, { tradable: boolean; autoPriced: boolean; hasUnits: boolean; kinds: string[] | null }> = {
+  stocks: { tradable: true, autoPriced: true, hasUnits: true, kinds: null },
+  crypto: { tradable: false, autoPriced: false, hasUnits: true, kinds: null },
+  metals: { tradable: false, autoPriced: true, hasUnits: true, kinds: ['Paper Gold', 'Physical Gold', 'Paper Silver', 'Physical Silver'] },
+  collectibles: { tradable: false, autoPriced: false, hasUnits: true, kinds: ['Trading Cards', 'Watches', 'Art', 'Other'] },
+  retirement: { tradable: false, autoPriced: false, hasUnits: false, kinds: ['CPF Ordinary Account', 'CPF Special Account', 'CPF MediSave', '401(k)', 'IRA', 'Other'] },
+  robo: { tradable: false, autoPriced: false, hasUnits: false, kinds: null },
+  other: { tradable: false, autoPriced: false, hasUnits: false, kinds: null },
+};
+
+/** Only Stocks is on by default — the rest are opt-in. */
+const DEFAULT_CATEGORIES: InvCategory[] = [
+  { key: 'stocks', label: 'Stocks & ETFs', icon: '💹', enabled: true },
+  { key: 'crypto', label: 'Crypto', icon: '₿', enabled: false },
+  { key: 'metals', label: 'Precious Metals', icon: '🪙', enabled: false },
+  { key: 'collectibles', label: 'Collectibles', icon: '🎴', enabled: false },
+  { key: 'retirement', label: 'Retirement', icon: '🏛️', enabled: false },
+  { key: 'robo', label: 'Robo-advisor', icon: '🤖', enabled: false },
+  { key: 'other', label: 'Other', icon: '📁', enabled: false },
 ];
 
-function categoryOf(key: string) {
-  return CATEGORIES.find((c) => c.key === key) ?? CATEGORIES[CATEGORIES.length - 1];
+const EMOJI_SUGGESTIONS = ['💹', '₿', '🪙', '🎴', '🏛️', '🤖', '📁', '🏠', '🎨', '🍷', '⌚', '🚗', '💎', '📦', '🌱', '🏦'];
+
+function behaviourOf(cat: InvCategory) {
+  return BUILTIN[cat.key] ?? { tradable: false, autoPriced: false, hasUnits: cat.hasUnits ?? true, kinds: null };
 }
 
-// Rows created before categories existed get sorted by their old `type` slug.
 function inferCategory(p: { category?: string; symbol?: string; type: string }): string {
   if (p.category) return p.category;
   if (p.symbol) return 'stocks';
@@ -66,7 +74,7 @@ function inferCategory(p: { category?: string; symbol?: string; type: string }):
 }
 
 const LEGACY_TYPE_LABELS: Record<string, string> = {
-  brokerage: 'Brokerage', retirement: 'Retirement (CPF/401k)', robo: 'Robo-advisor',
+  brokerage: 'Brokerage', retirement: 'Retirement', robo: 'Robo-advisor',
   crypto: 'Crypto', etf: 'ETF / Index Fund', other: 'Other',
 };
 function displayType(type: string): string {
@@ -87,11 +95,7 @@ function toMajor(minor: number, currency: string): number {
 function fromWire(w: api.ApiInvestment, fallbackCurrency: string): Position {
   const currency = w.currency || fallbackCurrency;
   return {
-    id: w.investmentId,
-    name: w.name,
-    type: w.type,
-    icon: w.icon,
-    currency,
+    id: w.investmentId, name: w.name, type: w.type, icon: w.icon, currency,
     symbol: w.symbol || undefined,
     category: w.category || undefined,
     quantity: w.shares,
@@ -103,9 +107,7 @@ function fromWire(w: api.ApiInvestment, fallbackCurrency: string): Position {
 function closedFromWire(w: api.ApiInvestment, fallbackCurrency: string): ClosedPosition {
   const currency = w.currency || fallbackCurrency;
   return {
-    id: w.investmentId,
-    name: w.name,
-    currency,
+    id: w.investmentId, name: w.name, currency,
     quantity: w.shares,
     costMinor: toMinor(w.costBasis, currency),
     proceedsMinor: toMinor(w.proceeds ?? 0, currency),
@@ -124,8 +126,14 @@ export default function InvestmentsPage() {
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [history, setHistory] = useState<api.HistoryPoint[]>([]);
   const [chartCurrency, setChartCurrency] = useState<string | null>(null);
-  const [fetchingPrice, setFetchingPrice] = useState(false);
   const [metalsFetchedAt, setMetalsFetchedAt] = useState<string | null>(null);
+
+  const [categories, setCategories] = useState<InvCategory[]>(DEFAULT_CATEGORIES);
+  const [showCatManager, setShowCatManager] = useState(false);
+  const [newCatLabel, setNewCatLabel] = useState('');
+  const [newCatIcon, setNewCatIcon] = useState('📁');
+  const [newCatHasUnits, setNewCatHasUnits] = useState(true);
+  const [editingIconFor, setEditingIconFor] = useState<string | null>(null);
 
   const [refreshing, setRefreshing] = useState(false);
   const [cooldownLeft, setCooldownLeft] = useState(0);
@@ -146,7 +154,8 @@ export default function InvestmentsPage() {
   const [quantity, setQuantity] = useState('');
   const [unitCost, setUnitCost] = useState('');
   const [unitPrice, setUnitPrice] = useState('');
-  const [priceOverride, setPriceOverride] = useState(false);
+  const [priceIsLive, setPriceIsLive] = useState(false);
+  const [fetchingPrice, setFetchingPrice] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
   // Close
@@ -162,7 +171,8 @@ export default function InvestmentsPage() {
   const [savingClosedEdit, setSavingClosedEdit] = useState(false);
 
   const defaultCurrency = getDefaultCurrency();
-  const category = categoryOf(modalCategory);
+  const category = categories.find((c) => c.key === modalCategory) ?? categories[0];
+  const behaviour = behaviourOf(category);
 
   function addToast(message: string, type: 'success' | 'error' = 'success') {
     const id = Date.now();
@@ -180,9 +190,7 @@ export default function InvestmentsPage() {
 
   useEffect(() => {
     setCurrency(getDefaultCurrency());
-    reload()
-      .catch((e) => addToast((e as Error).message, 'error'))
-      .finally(() => setLoading(false));
+    reload().catch((e) => addToast((e as Error).message, 'error')).finally(() => setLoading(false));
     api.getFxRates().then(setFx).catch(() => {});
     api.getInvestmentHistory(180)
       .then((points) => {
@@ -192,7 +200,27 @@ export default function InvestmentsPage() {
       .catch(() => {});
   }, []);
 
-  /* ── Refresh cooldown ── */
+  /* Categories come from prefs; fall back to defaults on first run. */
+  useEffect(() => {
+    const sync = () => {
+      const stored = getInvestmentCategories();
+      if (stored.length === 0) { setCategories(DEFAULT_CATEGORIES); return; }
+      // Merge so a newly-shipped built-in still appears for existing users.
+      const merged = [...stored];
+      for (const d of DEFAULT_CATEGORIES) {
+        if (!merged.some((c) => c.key === d.key)) merged.push(d);
+      }
+      setCategories(merged);
+    };
+    sync();
+    return onPrefsChange(sync);
+  }, []);
+
+  function commitCategories(next: InvCategory[]) {
+    setCategories(next);
+    setInvestmentCategories(next);
+  }
+
   useEffect(() => {
     const tick = () => {
       let last = 0;
@@ -204,25 +232,16 @@ export default function InvestmentsPage() {
     return () => clearInterval(id);
   }, []);
 
-  /* ── Ticker search, debounced ── */
   useEffect(() => {
-    if (!category.tradable || !showTickerSearch) return;
+    if (!behaviour.tradable || !showTickerSearch) return;
     const q = tickerQuery.trim();
     if (!q) { setTickerResults([]); return; }
     setSearchingTicker(true);
     const handle = setTimeout(() => {
-      api.searchTickers(q)
-        .then(setTickerResults)
-        .catch(() => setTickerResults([]))
-        .finally(() => setSearchingTicker(false));
+      api.searchTickers(q).then(setTickerResults).catch(() => setTickerResults([])).finally(() => setSearchingTicker(false));
     }, 300);
     return () => clearTimeout(handle);
-  }, [tickerQuery, category.tradable, showTickerSearch]);
-
-  /* ── Auto-fill current price when a ticker is chosen ── */
-  useEffect(() => {
-    if (!symbol || priceOverride || !editId === false) return;
-  }, [symbol, priceOverride, editId]);
+  }, [tickerQuery, behaviour.tradable, showTickerSearch]);
 
   const combined = useMemo(() => {
     if (!fx) return null;
@@ -248,35 +267,36 @@ export default function InvestmentsPage() {
     return total;
   }, [closed, fx, defaultCurrency]);
 
-  /** Holdings bucketed into their category, in CATEGORIES order. */
   const grouped = useMemo(() => {
     const map = new Map<string, Position[]>();
-    CATEGORIES.forEach((c) => map.set(c.key, []));
     for (const p of items) {
       const key = inferCategory(p);
-      map.get(key)?.push(p) ?? map.set(key, [p]);
+      const list = map.get(key) ?? [];
+      list.push(p);
+      map.set(key, list);
     }
     return map;
   }, [items]);
 
-  /* ── Refresh all prices ── */
+  /** A category shows if the user enabled it, or if it already holds something. */
+  const visibleCategories = categories.filter((c) => c.enabled || (grouped.get(c.key)?.length ?? 0) > 0);
 
   async function refreshPrices() {
     if (cooldownLeft > 0 || refreshing) return;
     setRefreshing(true);
     try {
       const result = await api.refreshAllQuotes();
-      if (result.metalsFetchedAt) setMetalsFetchedAt(result.metalsFetchedAt);
       try { localStorage.setItem(COOLDOWN_KEY, String(Date.now())); } catch {}
+      if (result.metalsFetchedAt) setMetalsFetchedAt(result.metalsFetchedAt);
       await reload();
       if (result.updated.length > 0) {
         addToast(`Updated ${result.updated.length} price${result.updated.length === 1 ? '' : 's'}. 📈`);
       }
       if (result.failed.length > 0) {
-        addToast(`No price for: ${result.failed.map((f) => f.symbol).join(', ')}`, 'error');
+        addToast(`Couldn't price: ${result.failed.map((f) => f.symbol).join(', ')}`, 'error');
       }
       if (result.updated.length === 0 && result.failed.length === 0) {
-        addToast('Nothing to refresh — no holdings have a price source.', 'error');
+        addToast('Nothing to refresh yet.', 'error');
       }
     } catch (e) {
       addToast((e as Error).message, 'error');
@@ -285,38 +305,76 @@ export default function InvestmentsPage() {
     }
   }
 
+  /* ── Category management ── */
+
+  function toggleCategory(key: string, enabled: boolean) {
+    commitCategories(categories.map((c) => (c.key === key ? { ...c, enabled } : c)));
+  }
+
+  function setCategoryIcon(key: string, icon: string) {
+    commitCategories(categories.map((c) => (c.key === key ? { ...c, icon } : c)));
+    setEditingIconFor(null);
+  }
+
+  function addCustomCategory() {
+    const label = newCatLabel.trim();
+    if (!label) return;
+    const created: InvCategory = {
+      key: `cat-${Date.now()}`,
+      label,
+      icon: newCatIcon,
+      enabled: true,
+      custom: true,
+      hasUnits: newCatHasUnits,
+    };
+    commitCategories([...categories, created]);
+    setNewCatLabel('');
+    setNewCatIcon('📁');
+    setNewCatHasUnits(true);
+    addToast(`"${label}" added.`);
+  }
+
+  function removeCustomCategory(key: string) {
+    if ((grouped.get(key)?.length ?? 0) > 0) {
+      addToast('Move or close its holdings first.', 'error');
+      return;
+    }
+    commitCategories(categories.filter((c) => c.key !== key));
+  }
+
   /* ── Form ── */
 
   function openAdd(categoryKey: string) {
-    const cat = categoryOf(categoryKey);
+    const cat = categories.find((c) => c.key === categoryKey) ?? categories[0];
+    const b = behaviourOf(cat);
     setEditId(null);
     setModalCategory(categoryKey);
     setKind('');
     setName('');
     setSymbol('');
-    setShowTickerSearch(cat.tradable);
+    setShowTickerSearch(b.tradable);
     setTickerQuery('');
     setTickerResults([]);
     setCurrency(getDefaultCurrency());
-    setQuantity(cat.hasUnits ? '' : '1');
+    setQuantity(b.hasUnits ? '' : '1');
     setUnitCost('');
     setUnitPrice('');
-    setPriceOverride(!cat.autoPriced);
+    setPriceIsLive(false);
     setFormError(null);
     setShowModal(true);
   }
 
   function openEdit(item: Position) {
     const catKey = inferCategory(item);
-    const cat = categoryOf(catKey);
+    const cat = categories.find((c) => c.key === catKey) ?? categories[0];
+    const b = behaviourOf(cat);
     setEditId(item.id);
     setModalCategory(catKey);
-    setKind(cat.kinds?.includes(item.type) ? item.type : '');
+    setKind(b.kinds?.includes(item.type) ? item.type : '');
     setName(item.name);
     setSymbol(item.symbol || '');
     setShowTickerSearch(false);
     setTickerQuery('');
-    setTickerResults([]);
     setCurrency(item.currency);
     setQuantity(item.quantity > 0 ? String(item.quantity) : '1');
 
@@ -325,7 +383,7 @@ export default function InvestmentsPage() {
     const d = decimalsFor(item.currency);
     setUnitCost(avg === null ? '' : (avg / 10 ** d).toString());
     setUnitPrice(last === null ? '' : (last / 10 ** d).toString());
-    setPriceOverride(true); // editing an existing row always shows the real stored price
+    setPriceIsLive(false);
     setFormError(null);
     setShowModal(true);
   }
@@ -336,36 +394,33 @@ export default function InvestmentsPage() {
     setShowTickerSearch(false);
     setTickerQuery('');
     setTickerResults([]);
-
-    // Pull the live price straight away so the field is filled before saving —
-    // no need to save then hit Refresh.
     setFetchingPrice(true);
     try {
       const q = await api.getQuoteBySymbol(sym, currency);
-      setUnitPrice(q.price.toFixed(decimalsFor(currency)));
-      setPriceOverride(true); // show the real number rather than the "auto" placeholder
+      const p = q.price.toFixed(decimalsFor(currency));
+      setUnitPrice(p);
+      setPriceIsLive(true);
+      // A holding you just bought was bought at today's price — a sensible
+      // starting point. Still editable, because older holdings weren't.
+      if (!unitCost) setUnitCost(p);
     } catch {
-      setPriceOverride(true); // let them type it — the lookup didn't land
+      setPriceIsLive(false);
     } finally {
       setFetchingPrice(false);
     }
   }
 
-  function pickTicker(r: api.TickerResult) {
-    void applySymbol(r.symbol, r.name);
-  }
-
+  function pickTicker(r: api.TickerResult) { void applySymbol(r.symbol, r.name); }
   function useManualSymbol() {
     const s = tickerQuery.trim().toUpperCase();
-    if (!s) return;
-    void applySymbol(s, s);
+    if (s) void applySymbol(s, s);
   }
 
   const preview = (() => {
     const qty = Number(quantity);
     if (!Number.isFinite(qty) || qty <= 0) return null;
-    const cost = parseAmountToMinor(unitCost || '0', currency);
-    const price = parseAmountToMinor(unitPrice || '0', currency);
+    const cost = parseAmountToMinor(unitCost || '', currency);
+    const price = parseAmountToMinor(unitPrice || '', currency);
     if (cost === null || price === null) return null;
     const costMinor = Math.round(cost * qty);
     const valueMinor = Math.round(price * qty);
@@ -373,41 +428,36 @@ export default function InvestmentsPage() {
   })();
 
   async function save() {
-    if (category.tradable && !symbol) {
-      setFormError('Search for a ticker and pick one, or enter the exact symbol yourself.');
+    if (behaviour.tradable && !symbol) {
+      setFormError('Pick a ticker first.');
       return;
     }
-    if (category.kinds && !kind) {
-      setFormError(`Choose a ${category.label.toLowerCase()} type.`);
+    if (behaviour.kinds && !kind) {
+      setFormError('Choose a type.');
       return;
     }
-    if (!category.tradable && !name.trim()) {
+    if (!behaviour.tradable && !name.trim()) {
       setFormError('Give this holding a name.');
       return;
     }
-
     const qty = Number(quantity);
     if (!Number.isFinite(qty) || qty <= 0) {
-      setFormError(category.hasUnits ? 'Enter how many units you hold.' : 'Something went wrong with the amount.');
+      setFormError('Enter how many units you hold.');
       return;
     }
-    const cost = parseAmountToMinor(unitCost || '0', currency);
-    const price = parseAmountToMinor(unitPrice || '0', currency);
-    if (cost === null || price === null) {
-      setFormError('Amounts must be plain numbers, like 42.50');
-      return;
-    }
+    const cost = parseAmountToMinor(unitCost || '', currency);
+    const price = parseAmountToMinor(unitPrice || '', currency);
+    if (cost === null) { setFormError('Enter what you paid per unit.'); return; }
+    if (price === null) { setFormError('Enter the current price per unit.'); return; }
 
     setSaving(true);
     setFormError(null);
-
-    const finalType = category.kinds ? kind : category.label;
     const wire = {
-      name: category.tradable ? name : name.trim(),
-      type: finalType,
+      name: behaviour.tradable ? name : name.trim(),
+      type: behaviour.kinds ? kind : category.label,
       icon: category.icon,
       currency,
-      symbol: category.tradable ? symbol : undefined,
+      symbol: behaviour.tradable ? symbol : undefined,
       category: category.key,
       shares: qty,
       costBasis: toMajor(Math.round(cost * qty), currency),
@@ -417,14 +467,10 @@ export default function InvestmentsPage() {
     try {
       if (editId) {
         await api.editInvestment(editId, wire);
-        addToast('Updated! Your portfolio thanks you. 📊');
+        addToast('Updated. 📊');
       } else {
         await api.addInvestment(wire);
-        addToast(pick([
-          'Added! Your financial empire grows. 📈',
-          'New holding tracked! Retirement is calling. 🏖️',
-          'Added! One step closer to world domination… financially.',
-        ]));
+        addToast(pick(['Added! Your financial empire grows. 📈', 'New holding tracked. 🏖️']));
       }
       await reload();
       setShowModal(false);
@@ -433,26 +479,6 @@ export default function InvestmentsPage() {
     } finally {
       setSaving(false);
     }
-  }
-
-  function confirmRemove(item: Position) {
-    setConfirm({
-      message: pick([
-        `"${item.name}" is about to be liquidated… from your tracker, at least.`,
-        `Say goodbye to "${item.name}". Your portfolio won't miss it. Probably.`,
-        `Deleting "${item.name}" won't affect your actual money. But it will hurt our feelings.`,
-      ]),
-      onYes: async () => {
-        setConfirm(null);
-        try {
-          await api.deleteInvestment(item.id);
-          setItems((prev) => prev.filter((i) => i.id !== item.id));
-          addToast('Deleted. One less thing to worry about.');
-        } catch (e) {
-          addToast((e as Error).message, 'error');
-        }
-      },
-    });
   }
 
   function confirmRemoveClosed(c: ClosedPosition) {
@@ -470,8 +496,6 @@ export default function InvestmentsPage() {
       },
     });
   }
-
-  /* ── Close ── */
 
   function openClose(item: Position) {
     setCloseTarget(item);
@@ -491,7 +515,7 @@ export default function InvestmentsPage() {
   async function submitClose() {
     if (!closeTarget) return;
     const proceeds = parseAmountToMinor(closeProceeds || '', closeTarget.currency);
-    if (proceeds === null) { addToast('Enter a plain number, e.g. 1500.00', 'error'); return; }
+    if (proceeds === null) { addToast('Enter a plain number.', 'error'); return; }
     const qty = closeTarget.quantity > 0 ? Number(closeQty) : undefined;
     if (closeTarget.quantity > 0 && (!Number.isFinite(qty!) || qty! <= 0 || qty! > closeTarget.quantity)) {
       addToast(`Quantity must be between 0 and ${closeTarget.quantity}.`, 'error');
@@ -502,7 +526,7 @@ export default function InvestmentsPage() {
       await api.closeInvestment(closeTarget.id, { quantity: qty, proceeds: toMajor(proceeds, closeTarget.currency) });
       await reload();
       setCloseTarget(null);
-      addToast(pick([`"${closeTarget.name}" closed. Locked in. 🔒`, 'Position closed! Realized gains, meet reality.']));
+      addToast(`"${closeTarget.name}" closed.`);
     } catch (e) {
       addToast((e as Error).message, 'error');
     } finally {
@@ -518,13 +542,13 @@ export default function InvestmentsPage() {
   async function saveClosedEdit() {
     if (!editClosedTarget) return;
     const proceeds = parseAmountToMinor(editClosedProceeds || '', editClosedTarget.currency);
-    if (proceeds === null) { addToast('Enter a plain number, e.g. 1500.00', 'error'); return; }
+    if (proceeds === null) { addToast('Enter a plain number.', 'error'); return; }
     setSavingClosedEdit(true);
     try {
       await api.editInvestment(editClosedTarget.id, { proceeds: toMajor(proceeds, editClosedTarget.currency) });
       setClosed((prev) => prev.map((c) => (c.id === editClosedTarget.id ? { ...c, proceedsMinor: proceeds } : c)));
       setEditClosedTarget(null);
-      addToast('Realized amount updated.');
+      addToast('Updated.');
     } catch (e) {
       addToast((e as Error).message, 'error');
     } finally {
@@ -550,7 +574,6 @@ export default function InvestmentsPage() {
         <p className="page-sub">Track your holdings and portfolio performance.</p>
       </div>
 
-      {/* ── Totals ── */}
       {loading ? (
         <div className="tracking-summary">
           <div className="summary-card"><p className="summary-card-label">Total value</p><p className="summary-card-value">—</p></div>
@@ -587,13 +610,12 @@ export default function InvestmentsPage() {
           </div>
           {combined.skipped > 0 && (
             <p className="split-hint" style={{ marginTop: -8, marginBottom: 16 }}>
-              {combined.skipped} holding{combined.skipped === 1 ? '' : 's'} couldn&apos;t be converted and {combined.skipped === 1 ? 'is' : 'are'} excluded above.
+              {combined.skipped} holding{combined.skipped === 1 ? '' : 's'} excluded — no exchange rate.
             </p>
           )}
         </>
       ) : null}
 
-      {/* ── Chart ── */}
       {history.length > 0 && (
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="card-head"><h2 className="card-title">Value over time</h2></div>
@@ -604,7 +626,7 @@ export default function InvestmentsPage() {
         </div>
       )}
 
-      {/* ── Tabs + global refresh ── */}
+      {/* ── Toolbar: one refresh button, nothing else ── */}
       <div className="inv-toolbar">
         <div className="dash-tabs" style={{ marginBottom: 0 }}>
           <button type="button" className={`dash-tab${viewTab === 'open' ? ' is-active' : ''}`} onClick={() => setViewTab('open')}>
@@ -617,20 +639,12 @@ export default function InvestmentsPage() {
           </button>
         </div>
         {viewTab === 'open' && (
-          <button type="button" className="card-action" onClick={refreshPrices} disabled={refreshing || cooldownLeft > 0}>
-            {refreshing ? 'Refreshing…' : cooldownLeft > 0 ? `↻ Wait ${cooldownSecs}s` : '↻ Refresh prices'}
-          </button>
-        )}
-
-        {viewTab === 'open' && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div className="inv-toolbar-right">
             {metalsFetchedAt && (
-              <span className="sub">
-                Metals: {new Date(metalsFetchedAt).toLocaleDateString()} · refreshes daily
-              </span>
+              <span className="sub">Metals {new Date(metalsFetchedAt).toLocaleDateString()}</span>
             )}
             <button type="button" className="card-action" onClick={refreshPrices} disabled={refreshing || cooldownLeft > 0}>
-              {refreshing ? 'Refreshing…' : cooldownLeft > 0 ? `↻ Wait ${cooldownSecs}s` : '↻ Refresh prices'}
+              {refreshing ? 'Refreshing…' : cooldownLeft > 0 ? `↻ ${cooldownSecs}s` : '↻ Refresh prices'}
             </button>
           </div>
         )}
@@ -652,96 +666,115 @@ export default function InvestmentsPage() {
           </div>
         </div>
       ) : viewTab === 'open' ? (
-        /* ── One section per category ── */
-        CATEGORIES.map((cat) => {
-          const catItems = grouped.get(cat.key) ?? [];
-          return (
-            <section key={cat.key} className={`cat-section${catItems.length === 0 ? ' is-empty' : ''}`}>
-              <div className="cat-divider">
-                <span className="cat-divider-icon">{cat.icon}</span>
-                <span className="cat-divider-label">{cat.label}</span>
-                {catItems.length > 0 && <span className="cat-divider-count">{catItems.length}</span>}
-                <button type="button" className="cat-divider-add" onClick={() => openAdd(cat.key)}>
-                  + Add
-                </button>
-              </div>
-
-              {catItems.length > 0 && (
-                <div className="tracking-table-wrap">
-                  <div style={{ overflowX: 'auto' }}>
-                    <table className="tracking-table">
-                      <thead>
-                        <tr>
-                          <th>Holding</th>
-                          <th className="hide-mobile">{cat.hasUnits ? 'Units' : ''}</th>
-                          <th className="hide-mobile">Avg cost</th>
-                          <th className="hide-mobile">Price</th>
-                          <th>Value</th>
-                          <th>P/L</th>
-                          <th></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {catItems.map((item) => {
-                          const gain = gainMinor(item);
-                          const pct = gainPct(item);
-                          return (
-                            <tr key={item.id}>
-                              <td>
-                                <div className="tracking-name-cell">
-                                  <div className="tracking-icon">{item.icon}</div>
-                                  <div className="tracking-name-text">
-                                    <div className="tracking-name">
-                                      {item.name}
-                                      {item.symbol && <span className="ticker-chip">{item.symbol}</span>}
-                                    </div>
-                                    <div className="tracking-type">{displayType(item.type)} · {item.currency}</div>
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="hide-mobile">{cat.hasUnits && item.quantity > 0 ? item.quantity : '—'}</td>
-                              <td className="hide-mobile">{formatUnitPrice(avgCostMinor(item), item.currency)}</td>
-                              <td className="hide-mobile">{formatUnitPrice(priceMinor(item), item.currency)}</td>
-                              <td><strong>{formatMoney(item.valueMinor, item.currency)}</strong></td>
-                              <td>
-                                <span className={gain >= 0 ? 'pos' : 'neg'}>
-                                  {gain >= 0 ? '+' : '−'}{formatMoney(Math.abs(gain), item.currency)}
-                                  {pct !== null && <span style={{ fontSize: 12, marginLeft: 4 }}>({pct >= 0 ? '+' : ''}{pct.toFixed(1)}%)</span>}
-                                </span>
-                              </td>
-                              <td>
-                                <div className="tracking-actions">
-                                  <button type="button" className="icon-btn icon-btn-sm" onClick={() => openEdit(item)} title="Edit">
-                                    <svg viewBox="0 0 20 20" width="12" height="12" fill="none" aria-hidden="true">
-                                      <path d="M13.5 3.5l3 3L6 17H3v-3L13.5 3.5z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                                    </svg>
-                                  </button>
-                                  <button type="button" className="icon-btn icon-btn-sm" onClick={() => openClose(item)} title="Close position">
-                                    {/* Arrow leaving a box — "exit this position" */}
-                                    <svg viewBox="0 0 20 20" width="12" height="12" fill="none" aria-hidden="true">
-                                      <path d="M8 3H4.5A1.5 1.5 0 0 0 3 4.5v11A1.5 1.5 0 0 0 4.5 17H8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-                                      <path d="M12.5 6.5 17 10l-4.5 3.5M17 10H8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                                    </svg>
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+        <>
+          {visibleCategories.map((cat) => {
+            const catItems = grouped.get(cat.key) ?? [];
+            const b = behaviourOf(cat);
+            return (
+              <section key={cat.key} className={`cat-section${catItems.length === 0 ? ' is-empty' : ''}`}>
+                <div className="cat-divider">
+                  <button type="button" className="cat-emoji-btn"
+                    onClick={() => setEditingIconFor(editingIconFor === cat.key ? null : cat.key)}
+                    title="Change icon">
+                    {cat.icon}
+                  </button>
+                  <span className="cat-divider-label">{cat.label}</span>
+                  {catItems.length > 0 && <span className="cat-divider-count">{catItems.length}</span>}
+                  <button type="button" className="cat-divider-add" onClick={() => openAdd(cat.key)}>+ Add</button>
                 </div>
-              )}
-            </section>
-          );
-        })
+
+                {editingIconFor === cat.key && (
+                  <div className="emoji-picker">
+                    {EMOJI_SUGGESTIONS.map((e) => (
+                      <button key={e} type="button" className="emoji-option" onClick={() => setCategoryIcon(cat.key, e)}>{e}</button>
+                    ))}
+                    <input className="input emoji-input" defaultValue={cat.icon} maxLength={4}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') setCategoryIcon(cat.key, (e.target as HTMLInputElement).value.trim() || cat.icon);
+                        if (e.key === 'Escape') setEditingIconFor(null);
+                      }} />
+                  </div>
+                )}
+
+                {catItems.length > 0 && (
+                  <div className="tracking-table-wrap">
+                    <div style={{ overflowX: 'auto' }}>
+                      <table className="tracking-table">
+                        <thead>
+                          <tr>
+                            <th>Holding</th>
+                            <th className="hide-mobile">{b.hasUnits ? 'Units' : ''}</th>
+                            <th className="hide-mobile">Avg cost</th>
+                            <th className="hide-mobile">Price</th>
+                            <th>Value</th>
+                            <th>P/L</th>
+                            <th></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {catItems.map((item) => {
+                            const gain = gainMinor(item);
+                            const pct = gainPct(item);
+                            return (
+                              <tr key={item.id}>
+                                <td>
+                                  <div className="tracking-name-cell">
+                                    <div className="tracking-icon">{item.icon}</div>
+                                    <div className="tracking-name-text">
+                                      <div className="tracking-name">
+                                        {item.name}
+                                        {item.symbol && <span className="ticker-chip">{item.symbol}</span>}
+                                      </div>
+                                      <div className="tracking-type">{displayType(item.type)} · {item.currency}</div>
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="hide-mobile">{b.hasUnits && item.quantity > 0 ? item.quantity : '—'}</td>
+                                <td className="hide-mobile">{formatUnitPrice(avgCostMinor(item), item.currency)}</td>
+                                <td className="hide-mobile">{formatUnitPrice(priceMinor(item), item.currency)}</td>
+                                <td><strong>{formatMoney(item.valueMinor, item.currency)}</strong></td>
+                                <td>
+                                  <span className={gain >= 0 ? 'pos' : 'neg'}>
+                                    {gain >= 0 ? '+' : '−'}{formatMoney(Math.abs(gain), item.currency)}
+                                    {pct !== null && <span style={{ fontSize: 12, marginLeft: 4 }}>({pct >= 0 ? '+' : ''}{pct.toFixed(1)}%)</span>}
+                                  </span>
+                                </td>
+                                <td>
+                                  <div className="tracking-actions">
+                                    <button type="button" className="icon-btn icon-btn-sm" onClick={() => openEdit(item)} title="Edit">
+                                      <svg viewBox="0 0 20 20" width="12" height="12" fill="none" aria-hidden="true">
+                                        <path d="M13.5 3.5l3 3L6 17H3v-3L13.5 3.5z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                                      </svg>
+                                    </button>
+                                    <button type="button" className="icon-btn icon-btn-sm" onClick={() => openClose(item)} title="Close position">
+                                      <svg viewBox="0 0 20 20" width="12" height="12" fill="none" aria-hidden="true">
+                                        <path d="M8 3H4.5A1.5 1.5 0 0 0 3 4.5v11A1.5 1.5 0 0 0 4.5 17H8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                                        <path d="M12.5 6.5 17 10l-4.5 3.5M17 10H8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                                      </svg>
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </section>
+            );
+          })}
+
+          <button type="button" className="cat-manage-btn" onClick={() => setShowCatManager(true)}>
+            + Add a category
+          </button>
+        </>
       ) : closed.length === 0 ? (
         <div className="tracking-table-wrap" style={{ marginTop: 12 }}>
           <div className="tracking-empty">
-            <div className="tracking-empty-icon">🔒</div>
+            <div className="tracking-empty-icon">📁</div>
             <p>Nothing closed yet.</p>
-            <p className="sub">Close a holding to record its realized gain or loss here.</p>
           </div>
         </div>
       ) : (
@@ -776,7 +809,7 @@ export default function InvestmentsPage() {
                       <td className="hide-mobile">{c.closedAt}</td>
                       <td>
                         <div className="tracking-actions">
-                          <button type="button" className="icon-btn icon-btn-sm" onClick={() => openEditClosed(c)} title="Edit realized amount">
+                          <button type="button" className="icon-btn icon-btn-sm" onClick={() => openEditClosed(c)} title="Edit">
                             <svg viewBox="0 0 20 20" width="12" height="12" fill="none" aria-hidden="true">
                               <path d="M13.5 3.5l3 3L6 17H3v-3L13.5 3.5z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
                             </svg>
@@ -797,33 +830,88 @@ export default function InvestmentsPage() {
         </div>
       )}
 
-      {/* ── Add / Edit ── */}
+      {/* ── Category manager ── */}
+      {showCatManager && (
+        <div className="modal-backdrop" onClick={() => setShowCatManager(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-head">
+              <h2 className="modal-title">Categories</h2>
+              <button type="button" className="modal-close" onClick={() => setShowCatManager(false)} aria-label="Close">×</button>
+            </div>
+
+            <ul className="cat-manage-list">
+              {categories.map((c) => {
+                const count = grouped.get(c.key)?.length ?? 0;
+                return (
+                  <li key={c.key} className="cat-manage-row">
+                    <span className="cat-manage-icon">{c.icon}</span>
+                    <span className="cat-manage-label">{c.label}</span>
+                    {count > 0 && <span className="cat-divider-count">{count}</span>}
+                    <label className="cat-manage-toggle">
+                      <input type="checkbox" checked={c.enabled || count > 0} disabled={count > 0}
+                        onChange={(e) => toggleCategory(c.key, e.target.checked)} />
+                      <span className="sub">Show</span>
+                    </label>
+                    {c.custom && (
+                      <button type="button" className="currency-remove" onClick={() => removeCustomCategory(c.key)} title="Remove">×</button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+
+            <div className="card-head" style={{ marginTop: 20, marginBottom: 10 }}>
+              <h2 className="card-title">New category</h2>
+            </div>
+            <div className="cat-new-row">
+              <button type="button" className="cat-emoji-btn"
+                onClick={() => setNewCatIcon(EMOJI_SUGGESTIONS[Math.floor(Math.random() * EMOJI_SUGGESTIONS.length)])}
+                title="Shuffle icon">
+                {newCatIcon}
+              </button>
+              <input className="input" value={newCatLabel} onChange={(e) => setNewCatLabel(e.target.value)}
+                placeholder="e.g. Property, Wine"
+                onKeyDown={(e) => { if (e.key === 'Enter') addCustomCategory(); }} />
+              <button type="button" className="btn" style={{ width: 'auto' }} onClick={addCustomCategory}>Add</button>
+            </div>
+            <div className="emoji-picker" style={{ marginTop: 8 }}>
+              {EMOJI_SUGGESTIONS.map((e) => (
+                <button key={e} type="button" className={`emoji-option${newCatIcon === e ? ' is-active' : ''}`}
+                  onClick={() => setNewCatIcon(e)}>{e}</button>
+              ))}
+            </div>
+            <label className="checkbox-row" style={{ marginTop: 12 }}>
+              <input type="checkbox" checked={newCatHasUnits} onChange={(e) => setNewCatHasUnits(e.target.checked)} />
+              Track units (uncheck for a single balance)
+            </label>
+          </div>
+        </div>
+      )}
+
+      {/* ── Add / Edit holding ── */}
       {showModal && (
         <div className="modal-backdrop" onClick={() => setShowModal(false)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
             <div className="modal-head">
-              <h2 className="modal-title">
-                {category.icon} {editId ? 'Edit' : 'Add'} · {category.label}
-              </h2>
+              <h2 className="modal-title">{category.icon} {editId ? 'Edit' : 'Add'} · {category.label}</h2>
               <button type="button" className="modal-close" onClick={() => setShowModal(false)} aria-label="Close">×</button>
             </div>
 
-            {category.kinds && (
+            {behaviour.kinds && (
               <label className="field">
                 <span className="field-label">Type</span>
                 <select className="select" value={kind} onChange={(e) => setKind(e.target.value)}>
                   <option value="" disabled>Choose one…</option>
-                  {category.kinds.map((k) => <option key={k} value={k}>{k}</option>)}
+                  {behaviour.kinds.map((k) => <option key={k} value={k}>{k}</option>)}
                 </select>
               </label>
             )}
 
-            {category.tradable ? (
+            {behaviour.tradable ? (
               showTickerSearch ? (
                 <div className="field">
-                  <span className="field-label">Ticker symbol</span>
-                  <input className="input" value={tickerQuery} onChange={(e) => setTickerQuery(e.target.value)}
-                    placeholder="Search — e.g. NVIDIA, AAPL, D05.SI" autoFocus />
+                  <span className="field-label">Ticker</span>
+                  <input className="input" value={tickerQuery} onChange={(e) => setTickerQuery(e.target.value)} autoFocus />
                   {searchingTicker && <p className="split-hint" style={{ marginTop: 6 }}>Searching…</p>}
                   {!searchingTicker && tickerResults.length > 0 && (
                     <ul className="ticker-list">
@@ -837,9 +925,8 @@ export default function InvestmentsPage() {
                       ))}
                     </ul>
                   )}
-                  {tickerQuery.trim() && (
+                  {tickerQuery.trim() && !searchingTicker && (
                     <p className="split-hint" style={{ marginTop: 8, marginBottom: 0 }}>
-                      Not listed?{' '}
                       <button type="button" className="link-btn" onClick={useManualSymbol}>
                         Use &quot;{tickerQuery.trim().toUpperCase()}&quot; exactly
                       </button>
@@ -848,7 +935,7 @@ export default function InvestmentsPage() {
                 </div>
               ) : (
                 <div className="field">
-                  <span className="field-label">Ticker symbol</span>
+                  <span className="field-label">Ticker</span>
                   <div className="ticker-chosen">
                     <span className="ticker-sym">{symbol}</span>
                     <span className="ticker-name">{name}</span>
@@ -859,8 +946,7 @@ export default function InvestmentsPage() {
             ) : (
               <label className="field">
                 <span className="field-label">Name</span>
-                <input className="input" value={name} onChange={(e) => setName(e.target.value)}
-                  placeholder={category.kinds ? 'e.g. 1oz Gold Bar' : 'e.g. Tiger Brokerage'} autoFocus />
+                <input className="input" value={name} onChange={(e) => setName(e.target.value)} autoFocus />
               </label>
             )}
 
@@ -869,35 +955,23 @@ export default function InvestmentsPage() {
               <CurrencySelect value={currency} onChange={setCurrency} />
             </label>
 
-            {category.hasUnits && (
+            {behaviour.hasUnits && (
               <label className="field">
                 <span className="field-label">Units held</span>
-                <input className="input" value={quantity} inputMode="decimal"
-                  onChange={(e) => setQuantity(e.target.value)} placeholder="100" />
+                <input className="input" value={quantity} inputMode="decimal" onChange={(e) => setQuantity(e.target.value)} />
               </label>
             )}
 
             <div className="grid-2">
               <label className="field">
-                <span className="field-label">{category.hasUnits ? 'Average cost / unit' : 'Amount invested'}</span>
-                <input className="input" value={unitCost} inputMode="decimal"
-                  onChange={(e) => setUnitCost(e.target.value)} placeholder="0.00" />
+                <span className="field-label">{behaviour.hasUnits ? 'Cost per unit' : 'Amount invested'}</span>
+                <input className="input" value={unitCost} inputMode="decimal" onChange={(e) => setUnitCost(e.target.value)} />
               </label>
               <label className="field">
-                <span className="field-label">
-                  {category.hasUnits ? 'Current price / unit' : 'Current value'}
-                  {category.autoPriced && !priceOverride && <span className="field-hint"> · auto</span>}
-                </span>
-                {category.autoPriced && !priceOverride ? (
-                  <div className="auto-price">
-                    <span className="sub">Fetched on refresh</span>
-                    <button type="button" className="link-btn" onClick={() => setPriceOverride(true)}>Set manually</button>
-                  </div>
-                ) : (
-                  <input className="input" value={fetchingPrice ? 'Fetching…' : unitPrice} inputMode="decimal"
-                    disabled={fetchingPrice}
-                    onChange={(e) => setUnitPrice(e.target.value)} placeholder="0.00" />
-                )}
+                <span className="field-label">{behaviour.hasUnits ? 'Current price' : 'Current value'}</span>
+                <input className="input" value={fetchingPrice ? '…' : unitPrice} inputMode="decimal"
+                  readOnly={priceIsLive} disabled={fetchingPrice}
+                  onChange={(e) => setUnitPrice(e.target.value)} />
               </label>
             </div>
 
@@ -909,12 +983,6 @@ export default function InvestmentsPage() {
                   P/L <strong>{preview.gain >= 0 ? '+' : '−'}{formatMoney(Math.abs(preview.gain), currency)}</strong>
                 </span>
               </div>
-            )}
-
-            {category.autoPriced && !priceOverride && (
-              <p className="split-hint">
-                Leave the price blank and hit <strong>↻ Refresh prices</strong> after saving — it&apos;ll fill in automatically.
-              </p>
             )}
 
             {formError && <p className="split-hint" style={{ color: 'var(--negative)' }}>{formError}</p>}
@@ -937,9 +1005,6 @@ export default function InvestmentsPage() {
               <h2 className="modal-title">Close &quot;{closeTarget.name}&quot;</h2>
               <button type="button" className="modal-close" onClick={() => setCloseTarget(null)} aria-label="Close">×</button>
             </div>
-            <p className="modal-message">
-              Proceeds default to this position&apos;s current value. Edit it if the actual sale differed.
-            </p>
             {closeTarget.quantity > 0 && (
               <label className="field">
                 <span className="field-label">Units to close (of {closeTarget.quantity})</span>
@@ -970,7 +1035,7 @@ export default function InvestmentsPage() {
               <button type="button" className="modal-close" onClick={() => setEditClosedTarget(null)} aria-label="Close">×</button>
             </div>
             <label className="field">
-              <span className="field-label">Actual proceeds received</span>
+              <span className="field-label">Proceeds received</span>
               <input className="input" value={editClosedProceeds} inputMode="decimal"
                 onChange={(e) => setEditClosedProceeds(e.target.value)} autoFocus />
             </label>
@@ -984,12 +1049,12 @@ export default function InvestmentsPage() {
         </div>
       )}
 
-      {/* ── Confirm delete ── */}
+      {/* ── Confirm ── */}
       {confirm && (
         <div className="modal-backdrop" onClick={() => setConfirm(null)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
             <div className="modal-head">
-              <h2 className="modal-title">Delete holding</h2>
+              <h2 className="modal-title">Delete record</h2>
               <button type="button" className="modal-close" onClick={() => setConfirm(null)} aria-label="Close">×</button>
             </div>
             <p className="modal-message">{confirm.message}</p>

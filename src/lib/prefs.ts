@@ -16,12 +16,15 @@ const KEYS = {
   theme: 'cagnotte:theme',
   groupCategories: 'cagnotte:group-categories',
   customCategories: 'cagnotte:custom-categories',
+  investmentCategories: 'cagnotte:investment-categories',
 } as const;
 const OWNER_KEY = 'cagnotte:prefs-owner';
 export const FALLBACK_CURRENCY = 'SGD';
 export const PREFS_EVENT = 'cagnotte:prefs-changed';
 
 export interface CustomCategory { id: string; label: string; order: number }
+
+
 
 function readRaw(key: string): string | null {
   try { return localStorage.getItem(key); } catch { return null; }
@@ -215,4 +218,24 @@ export function getCustomCategories(): CustomCategory[] {
 
 export function setCustomCategories(cats: CustomCategory[]) {
   set(KEYS.customCategories, JSON.stringify(cats), { customCategories: cats });
+}
+
+const INV_CATS_KEY = 'cagnotte:investment-categories';
+
+export interface InvCategory {
+  key: string;
+  label: string;
+  icon: string;
+  enabled: boolean;
+  custom?: boolean;
+  hasUnits?: boolean;
+}
+
+export function getInvestmentCategories(): InvCategory[] {
+  const parsed = readJson<unknown>(INV_CATS_KEY, null);
+  return Array.isArray(parsed) ? (parsed as InvCategory[]) : [];
+}
+
+export function setInvestmentCategories(cats: InvCategory[]) {
+  set(INV_CATS_KEY, JSON.stringify(cats), { investmentCategories: cats });
 }
