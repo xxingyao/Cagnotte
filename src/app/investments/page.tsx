@@ -124,6 +124,8 @@ export default function InvestmentsPage() {
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [history, setHistory] = useState<api.HistoryPoint[]>([]);
   const [chartCurrency, setChartCurrency] = useState<string | null>(null);
+  const [fetchingPrice, setFetchingPrice] = useState(false);
+  const [metalsFetchedAt, setMetalsFetchedAt] = useState<string | null>(null);
 
   const [refreshing, setRefreshing] = useState(false);
   const [cooldownLeft, setCooldownLeft] = useState(0);
@@ -264,6 +266,7 @@ export default function InvestmentsPage() {
     setRefreshing(true);
     try {
       const result = await api.refreshAllQuotes();
+      if (result.metalsFetchedAt) setMetalsFetchedAt(result.metalsFetchedAt);
       try { localStorage.setItem(COOLDOWN_KEY, String(Date.now())); } catch {}
       await reload();
       if (result.updated.length > 0) {
@@ -327,21 +330,35 @@ export default function InvestmentsPage() {
     setShowModal(true);
   }
 
-  function pickTicker(r: api.TickerResult) {
-    setSymbol(r.symbol);
-    setName(r.name);
+  async function applySymbol(sym: string, label: string) {
+    setSymbol(sym);
+    setName(label);
     setShowTickerSearch(false);
     setTickerQuery('');
     setTickerResults([]);
+
+    // Pull the live price straight away so the field is filled before saving —
+    // no need to save then hit Refresh.
+    setFetchingPrice(true);
+    try {
+      const q = await api.getQuoteBySymbol(sym, currency);
+      setUnitPrice(q.price.toFixed(decimalsFor(currency)));
+      setPriceOverride(true); // show the real number rather than the "auto" placeholder
+    } catch {
+      setPriceOverride(true); // let them type it — the lookup didn't land
+    } finally {
+      setFetchingPrice(false);
+    }
+  }
+
+  function pickTicker(r: api.TickerResult) {
+    void applySymbol(r.symbol, r.name);
   }
 
   function useManualSymbol() {
     const s = tickerQuery.trim().toUpperCase();
     if (!s) return;
-    setSymbol(s);
-    setName(s);
-    setShowTickerSearch(false);
-    setTickerQuery('');
+    void applySymbol(s, s);
   }
 
   const preview = (() => {
@@ -604,6 +621,19 @@ export default function InvestmentsPage() {
             {refreshing ? 'Refreshing…' : cooldownLeft > 0 ? `↻ Wait ${cooldownSecs}s` : '↻ Refresh prices'}
           </button>
         )}
+
+        {viewTab === 'open' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {metalsFetchedAt && (
+              <span className="sub">
+                Metals: {new Date(metalsFetchedAt).toLocaleDateString()} · refreshes daily
+              </span>
+            )}
+            <button type="button" className="card-action" onClick={refreshPrices} disabled={refreshing || cooldownLeft > 0}>
+              {refreshing ? 'Refreshing…' : cooldownLeft > 0 ? `↻ Wait ${cooldownSecs}s` : '↻ Refresh prices'}
+            </button>
+          </div>
+        )}
       </div>
 
       {loading ? (
@@ -686,10 +716,11 @@ export default function InvestmentsPage() {
                                       <path d="M13.5 3.5l3 3L6 17H3v-3L13.5 3.5z" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
                                     </svg>
                                   </button>
-                                  <button type="button" className="icon-btn icon-btn-sm" onClick={() => openClose(item)} title="Close position">🔒</button>
-                                  <button type="button" className="icon-btn icon-btn-sm is-danger" onClick={() => confirmRemove(item)} title="Delete">
+                                  <button type="button" className="icon-btn icon-btn-sm" onClick={() => openClose(item)} title="Close position">
+                                    {/* Arrow leaving a box — "exit this position" */}
                                     <svg viewBox="0 0 20 20" width="12" height="12" fill="none" aria-hidden="true">
-                                      <path d="M5 5l10 10M15 5 5 15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                                      <path d="M8 3H4.5A1.5 1.5 0 0 0 3 4.5v11A1.5 1.5 0 0 0 4.5 17H8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                                      <path d="M12.5 6.5 17 10l-4.5 3.5M17 10H8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
                                     </svg>
                                   </button>
                                 </div>
@@ -863,7 +894,8 @@ export default function InvestmentsPage() {
                     <button type="button" className="link-btn" onClick={() => setPriceOverride(true)}>Set manually</button>
                   </div>
                 ) : (
-                  <input className="input" value={unitPrice} inputMode="decimal"
+                  <input className="input" value={fetchingPrice ? 'Fetching…' : unitPrice} inputMode="decimal"
+                    disabled={fetchingPrice}
                     onChange={(e) => setUnitPrice(e.target.value)} placeholder="0.00" />
                 )}
               </label>

@@ -559,10 +559,17 @@ export async function putPreferences(patch: ApiPreferences): Promise<void> {
 export interface QuoteRefreshResult {
   updated: { investmentId: string; symbol: string; price: number }[];
   failed: { symbol: string; reason: string }[];
+  metalsFetchedAt?: string | null;
 }
 
 export async function refreshAllQuotes(): Promise<QuoteRefreshResult> {
   const json = await request('/me/investments/quotes', { method: 'POST' });
   invalidate('/me/investments');
   return json as QuoteRefreshResult;
+}
+
+export async function getQuoteBySymbol(symbol: string, currency: string): Promise<{ symbol: string; price: number; currency: string }> {
+  return (await request(
+    `/me/quote?symbol=${encodeURIComponent(symbol)}&currency=${encodeURIComponent(currency)}`,
+  )) as { symbol: string; price: number; currency: string };
 }
