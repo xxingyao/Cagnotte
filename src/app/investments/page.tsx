@@ -403,8 +403,11 @@ export default function InvestmentsPage() {
       // A holding you just bought was bought at today's price — a sensible
       // starting point. Still editable, because older holdings weren't.
       if (!unitCost) setUnitCost(p);
-    } catch {
+    } catch (e) {
       setPriceIsLive(false);
+      // Don't fail silently — an empty box with no explanation is worse than
+      // an error, since there's nothing to act on.
+      addToast(`Couldn't fetch a price for ${sym}: ${(e as Error).message}`, 'error');
     } finally {
       setFetchingPrice(false);
     }
