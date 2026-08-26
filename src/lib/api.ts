@@ -574,3 +574,27 @@ export async function getQuoteBySymbol(symbol: string, currency: string): Promis
     `/me/quote?symbol=${encodeURIComponent(symbol)}&currency=${encodeURIComponent(currency)}`,
   )) as { symbol: string; price: number; currency: string };
 }
+
+export interface InboxItem {
+  sk: string;
+  amount: number;
+  currency: string;
+  merchant: string;
+  source: string;
+  note: string;
+  createdAt: string;
+}
+
+export async function listInbox(): Promise<InboxItem[]> {
+  const json = await request('/me/inbox');
+  if (!Array.isArray(json)) throw new Error('Server did not return an inbox.');
+  return json as InboxItem[];
+}
+
+export async function dismissInboxItem(sk: string): Promise<void> {
+  await request(`/me/inbox/${encodeURIComponent(sk)}`, { method: 'DELETE' });
+}
+
+export async function rotateIngestToken(): Promise<{ token: string }> {
+  return (await request('/me/ingest-token', { method: 'POST' })) as { token: string };
+}

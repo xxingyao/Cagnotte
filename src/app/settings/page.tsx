@@ -39,6 +39,9 @@ export default function SettingsPage() {
   const [displayName, setDisplayName] = useState('');
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
+
+  const [ingestToken, setIngestToken] = useState<string | null>(null);
+  const [rotating, setRotating] = useState(false);
   
 
   function addToast(msg: string, type: 'success' | 'error' = 'success') {
@@ -146,6 +149,19 @@ export default function SettingsPage() {
       return;
     }
     addToast(`${code} removed from your list.`);
+  }
+
+  async function rotateToken() {
+    setRotating(true);
+    try {
+      const { token } = await api.rotateIngestToken();
+      setIngestToken(token);
+      addToast('New token generated. The old one no longer works.');
+    } catch (e) {
+      addToast((e as Error).message, 'error');
+    } finally {
+      setRotating(false);
+    }
   }
 
   function saveName() {
@@ -308,6 +324,34 @@ export default function SettingsPage() {
           ))}
         </div>
       </div>
+
+      {/* ── Auto-capture ── */}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="card-head">
+          <h2 className="card-title">Auto-capture token</h2>
+        </div>
+        <p className="split-hint" style={{ marginTop: 0 }}>
+          For the iOS Shortcut that logs Apple Pay transactions. Write-only — it can
+          add to your review inbox and nothing else.
+        </p>
+        {ingestToken && (
+          <div className="token-box">
+            <code>{ingestToken}</code>
+            <button type="button" className="link-btn"
+              onClick={() => { navigator.clipboard?.writeText(ingestToken); addToast('Copied.'); }}>
+              Copy
+            </button>
+          </div>
+        )}
+        <button type="button" className="btn btn-ghost" style={{ width: 'auto' }}
+          onClick={rotateToken} disabled={rotating}>
+          {rotating ? 'Generating…' : ingestToken ? 'Generate a new one' : 'Generate token'}
+        </button>
+        <p className="split-hint" style={{ marginBottom: 0 }}>
+          Shown once. Generating a new one immediately stops the old from working.
+        </p>
+      </div>
+
       {/* ── Sign out ── */}
       <div className="card">
         <div className="card-head">

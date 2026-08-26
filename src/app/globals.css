@@ -2705,3 +2705,21 @@ a {
 
 .cat-new-row { display: flex; gap: 8px; align-items: center; }
 .cat-new-row .input { flex: 1; }
+
+.token-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  overflow-x: auto;
+}
+
+.token-box code {
+  font-family: var(--font-num);
+  white-space: nowrap;
+}
