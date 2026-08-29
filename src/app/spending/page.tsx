@@ -126,24 +126,38 @@ export default function SpendingPage() {
 
   /* ── Inbox actions ── */
 
-  async function fileItem(item: api.InboxItem) {
+   async function fileItem(item: api.InboxItem) {
     setBusySk(item.sk);
+    // Drop it from the review list immediately — the UI shouldn't wait on the
+    // network to acknowledge a click.
+    setInbox((prev) => prev.filter((i) => i.sk !== item.sk));
+
     try {
-      await api.addPersonal({
+      const created = await api.addPersonal({
         // The inbox stores major units; everything downstream is minor.
         amountMinor: Math.round(item.amount * 10 ** decimalsFor(item.currency)),
         currency: item.currency,
         merchant: item.merchant,
         category: inboxCategory[item.sk] || 'Other',
-        direction: (item as { direction?: string }).direction === 'in' ? 'in' : 'out',
+        direction: item.direction === 'in' ? 'in' : 'out',
         source: item.source,
         note: item.note,
       });
-      await api.dismissInboxItem(item.sk);
-      setInbox((prev) => prev.filter((i) => i.sk !== item.sk));
-      await loadMonth(month);
+
+      // Append locally rather than refetching the month — the totals and the
+      // category bars both derive from this state, so they update instantly.
+      if (created.date.startsWith(month)) {
+        setExpenses((prev) => [...prev, created]);
+      }
+
+      // Fire-and-forget: the row is already saved and already gone from view.
+      // A failed dismiss just means it reappears on the next load.
+      void api.dismissInboxItem(item.sk).catch(() => {});
+
       addToast('Filed. 📥');
     } catch (e) {
+      // The expense didn't save — put it back so nothing is lost.
+      setInbox((prev) => [item, ...prev]);
       addToast((e as Error).message, 'error');
     } finally {
       setBusySk(null);
