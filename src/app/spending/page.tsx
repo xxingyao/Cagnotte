@@ -69,26 +69,38 @@ export default function SpendingPage() {
   }
 
   function loadMonth(m: string) {
-    return api.listPersonal(m).then(setExpenses);
+    return api.listPersonal(m, { fresh: true }).then(setExpenses);
   }
 
   useEffect(() => {
-    Promise.all([
-      loadMonth(month),
-      api.listPersonalBudgets().then(setBudgets),      api.listInbox().then((items) => {
+    // Paint from cache first so the numbers are there immediately, then
+    // revalidate in the background. Both share one request when cache is cold.
+    const paint = Promise.all([
+      api.listPersonal(month).then(setExpenses),
+      api.listPersonalBudgets().then(setBudgets),
+      api.listInbox().then((items) => {
         setInbox(items);
-        // Pre-guess a category for each so the common case is one click.
         const guesses: Record<string, string> = {};
         items.forEach((i) => { guesses[i.sk] = guessCategory(i.merchant); });
         setInboxCategory(guesses);
       }),
-    ])
+    ]);
+
+    paint
       .catch((e) => addToast((e as Error).message, 'error'))
       .finally(() => setLoading(false));
+
+    // Silent — a failed refresh leaves the cached view in place.
+    void api.listPersonal(month, { fresh: true }).then(setExpenses).catch(() => {});
+    void api.listPersonalBudgets({ fresh: true }).then(setBudgets).catch(() => {});
+    void api.listInbox({ fresh: true }).then(setInbox).catch(() => {});
   }, []);
 
   useEffect(() => {
-    loadMonth(month).catch((e) => addToast((e as Error).message, 'error'));
+    api.listPersonal(month)
+      .then(setExpenses)
+      .catch((e) => addToast((e as Error).message, 'error'));
+    void api.listPersonal(month, { fresh: true }).then(setExpenses).catch(() => {});
   }, [month]);
 
   /* ── Budget: the newest month at or before this one carries forward ── */
@@ -182,7 +194,7 @@ export default function SpendingPage() {
     if (minor === null) { addToast('Enter a plain number, e.g. 1500', 'error'); return; }
     try {
       await api.setPersonalBudget(month, minor, currency);
-      setBudgets(await api.listPersonalBudgets());
+      setBudgets(await api.listPersonalBudgets({ fresh: true }));
       setEditingBudget(false);
       addToast('Budget set. 🎯');
     } catch (e) {

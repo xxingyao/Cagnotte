@@ -590,14 +590,16 @@ export interface InboxItem {
   createdAt: string;
 }
 
-export async function listInbox(): Promise<InboxItem[]> {
-  const json = await request('/me/inbox');
+export async function listInbox({ fresh = false } = {}): Promise<InboxItem[]> {
+  const path = '/me/inbox';
+  const json = fresh ? await fetchAndCache(path) : await cachedRequest(path);
   if (!Array.isArray(json)) throw new Error('Server did not return an inbox.');
   return json as InboxItem[];
 }
 
 export async function dismissInboxItem(sk: string): Promise<void> {
   await request(`/me/inbox/${encodeURIComponent(sk)}`, { method: 'DELETE' });
+  invalidate('/me/inbox');
 }
 
 export async function rotateIngestToken(): Promise<{ token: string }> {
@@ -630,18 +632,26 @@ export interface PersonalBudget {
   isDefault?: boolean;
 }
 
-export async function listPersonal(month: string): Promise<PersonalExpense[]> {
-  const json = await request(`/me/personal?month=${encodeURIComponent(month)}`);
+export async function listPersonal(
+  month: string,
+  { fresh = false } = {},
+): Promise<PersonalExpense[]> {
+  const path = `/me/personal?month=${encodeURIComponent(month)}`;
+  // `fresh` skips the cache read but still shares an in-flight request, so a
+  // paint-then-revalidate pair costs one round trip, not two.
+  const json = fresh ? await fetchAndCache(path) : await cachedRequest(path);
   if (!Array.isArray(json)) throw new Error('Server did not return spending.');
   return json as PersonalExpense[];
 }
 
 export async function addPersonal(input: Partial<PersonalExpense>): Promise<PersonalExpense> {
-  return (await request('/me/personal', {
+  const json = await request('/me/personal', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
-  })) as PersonalExpense;
+  });
+  invalidate('/me/personal');
+  return json as PersonalExpense;
 }
 
 export async function editPersonal(sk: string, input: Partial<PersonalExpense>): Promise<void> {
@@ -650,22 +660,21 @@ export async function editPersonal(sk: string, input: Partial<PersonalExpense>):
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
+  invalidate('/me/personal');
 }
 
 export async function deletePersonal(sk: string): Promise<void> {
   await request(`/me/personal/${encodeURIComponent(sk)}`, { method: 'DELETE' });
+  invalidate('/me/personal');
 }
 
-export async function listPersonalBudgets(): Promise<PersonalBudget[]> {
-  const json = await request('/me/personal/budget');
+export async function listPersonalBudgets({ fresh = false } = {}): Promise<PersonalBudget[]> {
+  const path = '/me/personal/budget';
+  const json = fresh ? await fetchAndCache(path) : await cachedRequest(path);
   if (!Array.isArray(json)) throw new Error('Server did not return budgets.');
   return json as PersonalBudget[];
 }
 
-/**
- * Named apart from the group `setBudget` above — these hit different endpoints
- * and take different arguments.
- */
 export async function setPersonalBudget(
   month: string,
   limitMinor: number,
@@ -676,4 +685,5 @@ export async function setPersonalBudget(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ month, limitMinor, currency }),
   });
+  invalidate('/me/personal');
 }
