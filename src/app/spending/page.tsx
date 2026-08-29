@@ -75,8 +75,7 @@ export default function SpendingPage() {
   useEffect(() => {
     Promise.all([
       loadMonth(month),
-      api.listBudgets().then(setBudgets),
-      api.listInbox().then((items) => {
+      api.listPersonalBudgets().then(setBudgets),      api.listInbox().then((items) => {
         setInbox(items);
         // Pre-guess a category for each so the common case is one click.
         const guesses: Record<string, string> = {};
@@ -168,8 +167,8 @@ export default function SpendingPage() {
     const minor = parseAmountToMinor(budgetDraft || '', currency);
     if (minor === null) { addToast('Enter a plain number, e.g. 1500', 'error'); return; }
     try {
-      await api.setBudget(month, minor, currency);
-      setBudgets(await api.listBudgets());
+      await api.setPersonalBudget(month, minor, currency);
+      setBudgets(await api.listPersonalBudgets());
       setEditingBudget(false);
       addToast('Budget set. 🎯');
     } catch (e) {
