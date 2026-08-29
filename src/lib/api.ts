@@ -4,7 +4,7 @@ import { getIdToken, logout } from './auth';
 const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE ??
   'https://aywlfqpys6.execute-api.us-east-1.amazonaws.com/dev';
-  
+
 const cache = new Map<string, { data: unknown; at: number }>();
 const inFlight = new Map<string, Promise<unknown>>();
 const CACHE_TTL = 60_000; // 1 minute
@@ -125,6 +125,8 @@ async function request(path: string, init?: RequestInit) {
 
   return json;
 }
+
+// ─── Groups & expenses ──────────────────────────────────────────────────────
 
 export interface CreatedGroup {
   groupId: string;
@@ -380,6 +382,7 @@ export interface ApiInvestment {
   currentValue: number;
   currency?: string;
   symbol?: string;
+  category?: string;
   status?: 'open' | 'closed';
   proceeds?: number;
   closedAt?: string;
@@ -392,25 +395,27 @@ export interface ApiFxRates {
   fetchedAt: string;
 }
 
+export interface TickerResult {
+  symbol: string;
+  name: string;
+  type: string;
+}
+
+export interface HistoryPoint {
+  date: string;
+  currency: string;
+  value: number;
+  cost: number;
+}
+
+export interface QuoteRefreshResult {
+  updated: { investmentId: string; symbol: string; price: number }[];
+  failed: { symbol: string; reason: string }[];
+  metalsFetchedAt?: string | null;
+}
+
 export async function getFxRates(): Promise<ApiFxRates> {
   return (await cachedRequest('/fx/rates')) as ApiFxRates;
-}
-
-export async function closeInvestment(
-  investmentId: string,
-  input: { quantity?: number; proceeds: number },
-): Promise<ApiInvestment> {
-  const json = await request(`/me/investments/${encodeURIComponent(investmentId)}/close`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  });
-  invalidate('/me/investments');
-  return (json as { closed: ApiInvestment }).closed;
-}
-
-export async function getInvestmentQuote(investmentId: string): Promise<{ symbol: string; price: number }> {
-  return (await request(`/me/investments/${encodeURIComponent(investmentId)}/quote`)) as { symbol: string; price: number };
 }
 
 export async function listInvestments(): Promise<ApiInvestment[]> {
@@ -441,7 +446,6 @@ export async function editInvestment(
     body: JSON.stringify(input),
   });
   invalidate('/me/investments');
-  
 }
 
 export async function deleteInvestment(investmentId: string): Promise<void> {
@@ -449,24 +453,18 @@ export async function deleteInvestment(investmentId: string): Promise<void> {
   invalidate('/me/investments');
 }
 
-export interface ApiInvestment {
-  investmentId: string;
-  name: string;
-  type: string;
-  icon: string;
-  shares: number;
-  costBasis: number;
-  currentValue: number;
-  currency?: string;
-  symbol?: string;
-  category?: string;
-  status?: 'open' | 'closed';
-  proceeds?: number;
-  closedAt?: string;
-  updatedAt: string;
+export async function closeInvestment(
+  investmentId: string,
+  input: { quantity?: number; proceeds: number },
+): Promise<ApiInvestment> {
+  const json = await request(`/me/investments/${encodeURIComponent(investmentId)}/close`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  invalidate('/me/investments');
+  return (json as { closed: ApiInvestment }).closed;
 }
-
-export interface TickerResult { symbol: string; name: string; type: string; }
 
 export async function searchTickers(query: string): Promise<TickerResult[]> {
   if (!query.trim()) return [];
@@ -475,11 +473,19 @@ export async function searchTickers(query: string): Promise<TickerResult[]> {
   return json as TickerResult[];
 }
 
-export interface HistoryPoint {
-  date: string;
-  currency: string;
-  value: number;
-  cost: number;
+export async function getQuoteBySymbol(
+  symbol: string,
+  currency: string,
+): Promise<{ symbol: string; price: number; currency: string }> {
+  return (await request(
+    `/me/quote?symbol=${encodeURIComponent(symbol)}&currency=${encodeURIComponent(currency)}`,
+  )) as { symbol: string; price: number; currency: string };
+}
+
+export async function refreshAllQuotes(): Promise<QuoteRefreshResult> {
+  const json = await request('/me/investments/quotes', { method: 'POST' });
+  invalidate('/me/investments');
+  return json as QuoteRefreshResult;
 }
 
 export async function getInvestmentHistory(days = 180): Promise<HistoryPoint[]> {
@@ -518,16 +524,21 @@ export async function addAsset(input: Omit<ApiAsset, 'assetId' | 'lastUpdated'>)
   return json as ApiAsset;
 }
 
-export async function editAsset(assetId: string, input: Omit<ApiAsset, 'assetId' | 'lastUpdated'>): Promise<void> {
+export async function editAsset(
+  assetId: string,
+  input: Omit<ApiAsset, 'assetId' | 'lastUpdated'>,
+): Promise<void> {
   await request(`/me/assets/${encodeURIComponent(assetId)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
+  invalidate('/me/assets');
 }
 
 export async function deleteAsset(assetId: string): Promise<void> {
   await request(`/me/assets/${encodeURIComponent(assetId)}`, { method: 'DELETE' });
+  invalidate('/me/assets');
 }
 
 // ─── Preferences ────────────────────────────────────────────────────────────
@@ -539,8 +550,15 @@ export interface ApiPreferences {
   theme?: 'light' | 'dark';
   groupCategories?: Record<string, string>;
   customCategories?: { id: string; label: string; order: number }[];
+  investmentCategories?: {
+    key: string;
+    label: string;
+    icon: string;
+    enabled: boolean;
+    custom?: boolean;
+    hasUnits?: boolean;
+  }[];
   updatedAt?: string;
-  investmentCategories?: { key: string; label: string; icon: string; enabled: boolean; custom?: boolean; hasUnits?: boolean }[];
 }
 
 export async function getPreferences(): Promise<ApiPreferences> {
@@ -557,31 +575,18 @@ export async function putPreferences(patch: ApiPreferences): Promise<void> {
   invalidate('/me/preferences');
 }
 
-export interface QuoteRefreshResult {
-  updated: { investmentId: string; symbol: string; price: number }[];
-  failed: { symbol: string; reason: string }[];
-  metalsFetchedAt?: string | null;
-}
-
-export async function refreshAllQuotes(): Promise<QuoteRefreshResult> {
-  const json = await request('/me/investments/quotes', { method: 'POST' });
-  invalidate('/me/investments');
-  return json as QuoteRefreshResult;
-}
-
-export async function getQuoteBySymbol(symbol: string, currency: string): Promise<{ symbol: string; price: number; currency: string }> {
-  return (await request(
-    `/me/quote?symbol=${encodeURIComponent(symbol)}&currency=${encodeURIComponent(currency)}`,
-  )) as { symbol: string; price: number; currency: string };
-}
+// ─── Capture inbox ──────────────────────────────────────────────────────────
 
 export interface InboxItem {
   sk: string;
   amount: number;
   currency: string;
   merchant: string;
+  /** Money in is not an expense — the review screen needs to tell them apart. */
+  direction?: 'in' | 'out';
   source: string;
   note: string;
+  needsReview?: boolean;
   createdAt: string;
 }
 
@@ -597,4 +602,78 @@ export async function dismissInboxItem(sk: string): Promise<void> {
 
 export async function rotateIngestToken(): Promise<{ token: string }> {
   return (await request('/me/ingest-token', { method: 'POST' })) as { token: string };
+}
+
+export async function getInboxAddress(): Promise<{ address: string }> {
+  return (await request('/me/inbox-address')) as { address: string };
+}
+
+// ─── Personal spending ──────────────────────────────────────────────────────
+
+export interface PersonalExpense {
+  sk: string;
+  date: string;
+  amountMinor: number;
+  currency: string;
+  merchant: string;
+  category: string;
+  direction: 'in' | 'out';
+  source: string;
+  note: string;
+}
+
+export interface PersonalBudget {
+  sk: string;
+  month: string;
+  limitMinor: number;
+  currency: string;
+  isDefault?: boolean;
+}
+
+export async function listPersonal(month: string): Promise<PersonalExpense[]> {
+  const json = await request(`/me/personal?month=${encodeURIComponent(month)}`);
+  if (!Array.isArray(json)) throw new Error('Server did not return spending.');
+  return json as PersonalExpense[];
+}
+
+export async function addPersonal(input: Partial<PersonalExpense>): Promise<PersonalExpense> {
+  return (await request('/me/personal', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })) as PersonalExpense;
+}
+
+export async function editPersonal(sk: string, input: Partial<PersonalExpense>): Promise<void> {
+  await request(`/me/personal/${encodeURIComponent(sk)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function deletePersonal(sk: string): Promise<void> {
+  await request(`/me/personal/${encodeURIComponent(sk)}`, { method: 'DELETE' });
+}
+
+export async function listPersonalBudgets(): Promise<PersonalBudget[]> {
+  const json = await request('/me/personal/budget');
+  if (!Array.isArray(json)) throw new Error('Server did not return budgets.');
+  return json as PersonalBudget[];
+}
+
+/**
+ * Named apart from the group `setBudget` above — these hit different endpoints
+ * and take different arguments.
+ */
+export async function setPersonalBudget(
+  month: string,
+  limitMinor: number,
+  currency: string,
+): Promise<void> {
+  await request('/me/personal/budget', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ month, limitMinor, currency }),
+  });
 }
