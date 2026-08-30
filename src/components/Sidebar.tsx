@@ -9,7 +9,8 @@ import { useStore } from './StoreProvider';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Your groups', icon: '🏠' },
-    { href: '/spending', label: 'Spending', icon: '🧾' },
+  { href: '/budget', label: 'Budget', icon: '🧾' },
+  { href: '/analytics', label: 'Analytics', icon: '📊' },
   { href: '/friends', label: 'Friends', icon: '👥' },
   { href: '/investments', label: 'Investments', icon: '📈', warm: '/me/investments' },
   { href: '/assets', label: 'Assets', icon: '🏦', warm: '/me/assets' },

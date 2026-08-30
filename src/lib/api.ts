@@ -687,3 +687,44 @@ export async function setPersonalBudget(
   });
   invalidate('/me/personal');
 }
+
+export interface MerchantRule {
+  sk: string;
+  merchant: string;
+  category: string;
+}
+
+export async function listRules({ fresh = false } = {}): Promise<MerchantRule[]> {
+  const path = '/me/personal/rules';
+  const json = fresh ? await fetchAndCache(path) : await cachedRequest(path);
+  if (!Array.isArray(json)) return [];
+  return json as MerchantRule[];
+}
+
+export async function saveRule(merchant: string, category: string): Promise<void> {
+  await request('/me/personal/rules', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ merchant, category }),
+  });
+  invalidate('/me/personal/rules');
+}
+
+export async function deleteRule(merchant: string): Promise<void> {
+  await request(`/me/personal/rules/${encodeURIComponent(merchant)}`, { method: 'DELETE' });
+  invalidate('/me/personal/rules');
+}
+
+/** Several months at once, for the analytics page. */
+export async function listPersonalRange(
+  fromMonth: string,
+  toMonth: string,
+  { fresh = false } = {},
+): Promise<PersonalExpense[]> {
+  const from = encodeURIComponent(`expense#${fromMonth}-01`);
+  const to = encodeURIComponent(`expense#${toMonth}-32`);
+  const path = `/me/personal?from=${from}&to=${to}`;
+  const json = fresh ? await fetchAndCache(path) : await cachedRequest(path);
+  if (!Array.isArray(json)) throw new Error('Server did not return spending.');
+  return json as PersonalExpense[];
+}

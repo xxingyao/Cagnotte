@@ -2800,3 +2800,121 @@ a {
   .cat-bar-row { grid-template-columns: 100px 1fr auto; }
   .cat-bar-pct { display: none; }
 }
+
+/* ── Budget page header ── */
+
+.page-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.bell-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--ink-muted);
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.bell-btn:hover {
+  border-color: var(--border-strong);
+  color: var(--ink);
+}
+
+.bell-btn.has-items {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.bell-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--negative);
+  color: #fff;
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.modal-wide { max-width: 640px; }
+
+/* ── Trend chart ── */
+
+.trend-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding-top: 10px;
+}
+
+.trend-col {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+}
+
+.trend-bar-wrap {
+  position: relative;
+  height: 160px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.trend-bar {
+  width: 100%;
+  max-width: 46px;
+  min-height: 3px;
+  background: var(--brand);
+  border-radius: 5px 5px 0 0;
+  transition: height 0.25s ease;
+}
+
+.trend-bar.is-over { background: var(--negative); }
+
+.trend-budget-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed var(--border-strong);
+  pointer-events: none;
+}
+
+.trend-label {
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 550;
+  color: var(--ink-soft);
+}
+
+.trend-value {
+  font-size: 11px;
+  color: var(--ink-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 560px) {
+  .trend-value { display: none; }
+  .trend-chart { gap: 6px; }
+}
